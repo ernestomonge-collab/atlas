@@ -1907,8 +1907,9 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
       />
 
       {/* Edit Task Modal */}
+      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
       <EditTaskModal
-        task={taskToEdit as unknown as any}
+        task={taskToEdit as any}
         projectId={projectId!}
         open={showEditTaskModal}
         onOpenChange={setShowEditTaskModal}
