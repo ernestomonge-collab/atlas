@@ -28,8 +28,10 @@ export async function POST(request: NextRequest) {
       data: {
         name,
         description,
-        organizationId: session.user.organizationId
-      },
+        organizationId: session.user.organizationId,
+        spaceId: defaultSpace.id
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any,
       include: {
         organization: true,
         _count: {
