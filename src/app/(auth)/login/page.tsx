@@ -61,7 +61,7 @@ export default function LoginPage() {
           </div>
           <CardTitle className="text-2xl font-bold">Welcome Back</CardTitle>
           <CardDescription>
-            Sign in to your Lilab Ops account
+            Sign in to your Lilab Ops v1 account
           </CardDescription>
         </CardHeader>
         <CardContent>

@@ -84,7 +84,7 @@ export function Sidebar({ className, collapsed = false, onToggleCollapse }: Side
           <>
             <div className="flex items-center">
               <Building2 className="h-8 w-8 text-blue-600 flex-shrink-0" />
-              <span className="ml-2 text-xl font-bold text-gray-900">Lilab Ops</span>
+              <span className="ml-2 text-xl font-bold text-gray-900">Lilab Ops v1</span>
             </div>
 
             {/* Toggle Button - Expanded */}
