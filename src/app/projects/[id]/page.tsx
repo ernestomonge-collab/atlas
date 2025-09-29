@@ -128,9 +128,9 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
     // Actualizar el estado de la tarea
     setTasks(prev => prev.map(task =>
       task.id === taskId
-        ? { ...task, status: newStatus }
+        ? { ...task, status: newStatus as unknown as TaskStatus }
         : task
-    ))
+    ) as unknown as Task[])
 
     setActiveTask(null)
   }
@@ -886,8 +886,8 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
   // Handle task status change in kanban view
   const handleTaskStatusChange = (taskId: string, newStatus: string) => {
     setTasks(prev => prev.map(task =>
-      task.id === taskId ? { ...task, status: newStatus } : task
-    ))
+      task.id === taskId ? { ...task, status: newStatus as unknown as TaskStatus } : task
+    ) as unknown as Task[])
   }
 
   return (
@@ -1138,8 +1138,8 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
                               value={task.status}
                               onValueChange={(newStatus) => {
                                 setTasks(prev => prev.map(t =>
-                                  t.id === task.id ? { ...t, status: newStatus } : t
-                                ))
+                                  t.id === task.id ? { ...t, status: newStatus as unknown as TaskStatus } : t
+                                ) as unknown as Task[])
                               }}
                             >
                               <SelectTrigger className="h-6 border-0 p-0 hover:bg-gray-100 focus:ring-0">
@@ -1186,8 +1186,8 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
                               value={task.priority}
                               onValueChange={(newPriority) => {
                                 setTasks(prev => prev.map(t =>
-                                  t.id === task.id ? { ...t, priority: newPriority } : t
-                                ))
+                                  t.id === task.id ? { ...t, priority: newPriority as unknown as TaskPriority } : t
+                                ) as unknown as Task[])
                               }}
                             >
                               <SelectTrigger className="h-6 border-0 p-0 hover:bg-gray-100 focus:ring-0">

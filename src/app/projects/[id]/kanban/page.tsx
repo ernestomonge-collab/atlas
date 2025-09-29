@@ -96,8 +96,8 @@ function KanbanPageClient({ projectId }: { projectId: string }) {
 
       // Update local state
       setTasks(prev => prev.map(task =>
-        task.id === taskId ? { ...task, priority: newPriority } : task
-      ))
+        task.id === taskId ? { ...task, priority: newPriority as unknown as TaskPriority } : task
+      ) as unknown as Task[])
     } catch (error) {
       console.error('Error updating task priority:', error)
     }
