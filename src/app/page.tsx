@@ -1,6 +1,5 @@
 'use client'
 
-import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
 import Link from 'next/link'
@@ -9,22 +8,12 @@ import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/ca
 import { Building2, CheckCircle, Users, BarChart3, Zap } from 'lucide-react'
 
 export default function HomePage() {
-  const { data: session, status } = useSession()
   const router = useRouter()
 
   useEffect(() => {
-    if (status === 'authenticated' && session) {
-      router.push('/dashboard')
-    }
-  }, [session, status, router])
-
-  if (status === 'loading') {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
-      </div>
-    )
-  }
+    // Redirect directly to dashboard for demo purposes
+    router.push('/dashboard')
+  }, [router])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">

@@ -1,7 +1,5 @@
 'use client'
 
-import { useSession } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -49,24 +47,15 @@ interface TeamAnalytics {
 }
 
 export default function ReportsPage() {
-  const { data: session, status } = useSession()
-  const router = useRouter()
   const [projectAnalytics, setProjectAnalytics] = useState<ProjectAnalytics[]>([])
   const [teamAnalytics, setTeamAnalytics] = useState<TeamAnalytics | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (status === 'unauthenticated') {
-      router.push('/login')
-    }
-  }, [status, router])
-
-  useEffect(() => {
-    if (session) {
-      fetchAnalytics()
-    }
-  }, [session])
+    // Load mock data directly for demo
+    fetchAnalytics()
+  }, [])
 
   const fetchAnalytics = async () => {
     try {
@@ -89,17 +78,7 @@ export default function ReportsPage() {
     }
   }
 
-  if (status === 'loading') {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
-      </div>
-    )
-  }
-
-  if (!session) {
-    return null
-  }
+  // Remove auth checks for demo version
 
   const getTrendIcon = (trend: 'up' | 'down' | 'stable') => {
     switch (trend) {

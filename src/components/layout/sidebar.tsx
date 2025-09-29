@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useSession } from 'next-auth/react'
+import { MOCK_USER } from '@/lib/mock-data'
 import { cn } from '@/lib/utils'
 import {
   Building2,
@@ -25,7 +25,7 @@ interface SidebarProps {
 
 export function Sidebar({ className, collapsed = false, onToggleCollapse }: SidebarProps) {
   const pathname = usePathname()
-  const { data: session } = useSession()
+  const session = { user: MOCK_USER } // Use mock user instead of real session
 
   const navigation = [
     {
@@ -66,9 +66,7 @@ export function Sidebar({ className, collapsed = false, onToggleCollapse }: Side
     }
   ]
 
-  if (!session) {
-    return null
-  }
+  // Always show sidebar for demo - no auth check needed
 
   return (
     <div className={cn("flex h-full flex-col bg-white shadow-sm border-r transition-all duration-300",
