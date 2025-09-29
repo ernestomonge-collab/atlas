@@ -1,6 +1,5 @@
 'use client'
 
-import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
@@ -9,32 +8,18 @@ import { Badge } from '@/components/ui/badge'
 import { MainLayout } from '@/components/layout/main-layout'
 import { SpaceCard } from '@/components/spaces/space-card'
 import { CreateSpaceModal } from '@/components/spaces/create-space-modal'
-import { getMockSpacesWithProjects } from '@/lib/mock-data'
+import { getMockSpacesWithProjects, MOCK_USER } from '@/lib/mock-data'
 import { Space } from '@/types'
 import { Layers, Plus, Building2, BarChart3, Users, Clock } from 'lucide-react'
 
 export default function SpacesPage() {
-  const { data: session, status } = useSession()
+  // Use mock user for demo
+  const session = { user: MOCK_USER }
   const router = useRouter()
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [spaces, setSpaces] = useState(getMockSpacesWithProjects())
 
-  // TEMP: Skip auth for demo
-  // if (status === 'loading') {
-  //   return (
-  //     <div className="min-h-screen flex items-center justify-center">
-  //       <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
-  //     </div>
-  //   )
-  // }
-
-  // if (!session) {
-  //   router.push('/login')
-  //   return null
-  // }
-
-  // Temp mock session for demo
-  const mockSession = { user: { name: 'Juan Pérez' } }
+  // Remove auth redirect - using mock data
 
   // Calculate overall stats
   const totalProjects = spaces.reduce((sum, space) => sum + space.analytics.totalProjects, 0)

@@ -1,6 +1,5 @@
 'use client'
 
-import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import React, { useEffect, useState } from 'react'
 import Link from 'next/link'
@@ -19,7 +18,7 @@ import { MainLayout } from '@/components/layout/main-layout'
 import { ManageProjectMembersModal } from '@/components/projects/manage-project-members-modal'
 import { ProjectConfigModal } from '@/components/projects/project-config-modal'
 import { EditTaskModal } from '@/components/tasks/edit-task-modal'
-import { getMockProjectById, getMockTasksByProjectId, getMockSubtasksByTaskId } from '@/lib/mock-data'
+import { getMockProjectById, getMockTasksByProjectId, getMockSubtasksByTaskId, MOCK_USER } from '@/lib/mock-data'
 import { ProjectConfig, getDefaultProjectConfig } from '@/lib/project-config'
 import { Project, Task, User, ProjectMember } from '@/types'
 import { TaskStatus, TaskPriority } from '@prisma/client'
@@ -77,7 +76,8 @@ interface ProjectDetailPageProps {
 }
 
 export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
-  const { data: session, status } = useSession()
+  // Use mock user for demo
+  const session = { user: MOCK_USER }
   const router = useRouter()
   const [project, setProject] = useState<Project | null>(null)
   const [tasks, setTasks] = useState<Task[]>([])
@@ -449,18 +449,14 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
     getParams()
   }, [params])
 
-  useEffect(() => {
-    if (status === 'unauthenticated') {
-      router.push('/login')
-    }
-  }, [status, router])
+  // Remove auth redirect - using mock data
 
   useEffect(() => {
-    if (session && projectId) {
+    if (projectId) {
       fetchProjectDetails()
       fetchTeamMembers()
     }
-  }, [session, projectId])
+  }, [projectId])
 
   const fetchProjectDetails = async () => {
     if (!projectId) return
@@ -509,7 +505,7 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
     }
   }
 
-  if (status === 'loading' || isLoading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
@@ -517,7 +513,7 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
     )
   }
 
-  if (!session || !project || !projectId) {
+  if (!project || !projectId) {
     return null
   }
 

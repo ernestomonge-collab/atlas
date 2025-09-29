@@ -1,8 +1,7 @@
 'use client'
 
-import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -19,11 +18,13 @@ import { EditProjectModal } from '@/components/projects/edit-project-modal'
 import { ManageProjectMembersModal } from '@/components/projects/manage-project-members-modal'
 import { MainLayout } from '@/components/layout/main-layout'
 import { useProjects } from '@/hooks/use-projects'
+import { MOCK_USER } from '@/lib/mock-data'
 import { Project } from '@/types'
 import { Building2, Plus, Users, Calendar, CheckCircle, Clock, MoreVertical, Edit, Trash2 } from 'lucide-react'
 
 export default function ProjectsPage() {
-  const { data: session, status } = useSession()
+  // Use mock user for demo
+  const session = { user: MOCK_USER }
   const router = useRouter()
   const { projects, isLoading, refreshProjects } = useProjects()
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -31,23 +32,9 @@ export default function ProjectsPage() {
   const [showMembersModal, setShowMembersModal] = useState(false)
   const [selectedProject, setSelectedProject] = useState<Project | null>(null)
 
-  useEffect(() => {
-    if (status === 'unauthenticated') {
-      router.push('/login')
-    }
-  }, [status, router])
+  // Remove auth redirect - using mock data
 
-  if (status === 'loading') {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
-      </div>
-    )
-  }
-
-  if (!session) {
-    return null
-  }
+  // Remove loading and auth checks - using mock data
 
   const handleProjectCreated = () => {
     refreshProjects()

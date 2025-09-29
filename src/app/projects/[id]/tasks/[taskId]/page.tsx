@@ -1,6 +1,5 @@
 'use client'
 
-import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
@@ -12,6 +11,7 @@ import { TaskDetailView } from '@/components/tasks/task-detail-view'
 import { TaskComments } from '@/components/tasks/task-comments'
 import { useProject } from '@/hooks/use-project'
 import { useTask } from '@/hooks/use-task'
+import { MOCK_USER } from '@/lib/mock-data'
 import { ArrowLeft, Edit, Trash2, User, Calendar, Flag } from 'lucide-react'
 import { TaskStatus, TaskPriority } from '@prisma/client'
 import { Task } from '@/types'
@@ -27,19 +27,16 @@ export default async function TaskDetailPage({
 }
 
 function TaskDetailClient({ projectId, taskId }: { projectId: string; taskId: string }) {
-  const { data: session, status } = useSession()
+  // Use mock user for demo
+  const session = { user: MOCK_USER }
   const router = useRouter()
   const { project, isLoading: projectLoading } = useProject(projectId)
   const { task, isLoading: taskLoading, updateTask, deleteTask } = useTask(projectId, taskId)
   const [isEditing, setIsEditing] = useState(false)
 
-  useEffect(() => {
-    if (status === 'unauthenticated') {
-      router.push('/login')
-    }
-  }, [status, router])
+  // Remove auth redirect - using mock data
 
-  if (status === 'loading' || projectLoading || taskLoading) {
+  if (projectLoading || taskLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
@@ -47,7 +44,7 @@ function TaskDetailClient({ projectId, taskId }: { projectId: string; taskId: st
     )
   }
 
-  if (!session || !project || !task) {
+  if (!project || !task) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">

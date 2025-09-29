@@ -1,13 +1,12 @@
 'use client'
 
-import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { MainLayout } from '@/components/layout/main-layout'
-import { getMockTasksForCalendar } from '@/lib/mock-data'
+import { getMockTasksForCalendar, MOCK_USER } from '@/lib/mock-data'
 import { CalendarTask } from '@/types'
 import {
   Calendar as CalendarIcon,
@@ -22,7 +21,8 @@ import {
 
 
 export default function CalendarPage() {
-  const { data: session, status } = useSession()
+  // Use mock user for demo
+  const session = { user: MOCK_USER }
   const router = useRouter()
   const [tasks, setTasks] = useState<CalendarTask[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -37,17 +37,11 @@ export default function CalendarPage() {
     project: 'all'
   })
 
-  useEffect(() => {
-    if (status === 'unauthenticated') {
-      router.push('/login')
-    }
-  }, [status, router])
+  // Remove auth redirect - using mock data
 
   useEffect(() => {
-    if (session) {
-      fetchCalendarData()
-    }
-  }, [session])
+    fetchCalendarData()
+  }, [])
 
   const fetchCalendarData = async () => {
     try {
@@ -63,7 +57,7 @@ export default function CalendarPage() {
     }
   }
 
-  if (status === 'loading' || isLoading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
@@ -71,9 +65,7 @@ export default function CalendarPage() {
     )
   }
 
-  if (!session) {
-    return null
-  }
+  // Remove auth check - using mock data
 
   const getDaysInMonth = (date: Date) => {
     return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()

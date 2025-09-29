@@ -1,6 +1,5 @@
 'use client'
 
-import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
@@ -9,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { MainLayout } from '@/components/layout/main-layout'
-import { getMockProjectById, getMockTasksByProjectId, MOCK_SPRINTS } from '@/lib/mock-data'
+import { getMockProjectById, getMockTasksByProjectId, MOCK_SPRINTS, MOCK_USER } from '@/lib/mock-data'
 import { Project, Task, Sprint, TaskPriority } from '@/types'
 import {
   ArrowLeft,
@@ -35,7 +34,8 @@ export default async function ProjectKanbanPage({ params }: KanbanPageProps) {
 }
 
 function KanbanPageClient({ projectId }: { projectId: string }) {
-  const { data: session, status } = useSession()
+  // Use mock user for demo
+  const session = { user: MOCK_USER }
   const router = useRouter()
   const [project, setProject] = useState<Project | null>(null)
   const [tasks, setTasks] = useState<Task[]>([])
@@ -43,17 +43,11 @@ function KanbanPageClient({ projectId }: { projectId: string }) {
   const [isLoading, setIsLoading] = useState(true)
   const [sprintFilter, setSprintFilter] = useState<string>('all')
 
-  useEffect(() => {
-    if (status === 'unauthenticated') {
-      router.push('/login')
-    }
-  }, [status, router])
+  // Remove auth redirect - using mock data
 
   useEffect(() => {
-    if (session) {
-      fetchData()
-    }
-  }, [session, projectId])
+    fetchData()
+  }, [projectId])
 
   const fetchData = async () => {
     try {
@@ -148,7 +142,7 @@ function KanbanPageClient({ projectId }: { projectId: string }) {
     return null
   }
 
-  if (status === 'loading' || isLoading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
@@ -156,7 +150,7 @@ function KanbanPageClient({ projectId }: { projectId: string }) {
     )
   }
 
-  if (!session || !project) {
+  if (!project) {
     return null
   }
 

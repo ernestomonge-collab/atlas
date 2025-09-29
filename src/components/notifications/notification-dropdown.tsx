@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import {
@@ -11,21 +11,47 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
-import { useNotifications } from '@/hooks/use-notifications'
+import { MOCK_NOTIFICATIONS } from '@/lib/mock-data'
 import { Bell, Check, CheckCheck, X, AlertTriangle, Info, CheckCircle, XCircle } from 'lucide-react'
-import { NotificationType } from '@prisma/client'
-import { Notification } from '@/types'
+import { NotificationType, Notification } from '@/types'
 
 export function NotificationDropdown() {
-  const {
-    notifications,
-    unreadCount,
-    isLoading,
-    markAsRead,
-    markAllAsRead,
-    deleteNotification,
-  } = useNotifications()
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const [isLoading, setIsLoading] = useState(true)
   const [isOpen, setIsOpen] = useState(false)
+
+  useEffect(() => {
+    // Load mock notifications for demo
+    const loadNotifications = async () => {
+      setIsLoading(true)
+      // Simulate API call delay
+      await new Promise(resolve => setTimeout(resolve, 300))
+      setNotifications(MOCK_NOTIFICATIONS as Notification[])
+      setIsLoading(false)
+    }
+
+    loadNotifications()
+  }, [])
+
+  const unreadCount = notifications.filter(n => !n.isRead).length
+
+  const markAsRead = async (notificationId: string) => {
+    setNotifications(prev =>
+      prev.map(n => n.id === notificationId ? { ...n, isRead: true } : n)
+    )
+  }
+
+  const markAllAsRead = async () => {
+    setNotifications(prev =>
+      prev.map(n => ({ ...n, isRead: true }))
+    )
+  }
+
+  const deleteNotification = async (notificationId: string) => {
+    setNotifications(prev =>
+      prev.filter(n => n.id !== notificationId)
+    )
+  }
 
   const getNotificationIcon = (type: NotificationType) => {
     switch (type) {
@@ -58,8 +84,8 @@ export function NotificationDropdown() {
     return '#'
   }
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
+  const formatDate = (dateString: string | Date) => {
+    const date = typeof dateString === 'string' ? new Date(dateString) : dateString
     const now = new Date()
     const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60)
 

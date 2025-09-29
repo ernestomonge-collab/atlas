@@ -1,15 +1,13 @@
 'use client'
 
-import { useSession } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
-import { useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { MainLayout } from '@/components/layout/main-layout'
-import { Notification } from '@/types'
-import { useNotifications } from '@/hooks/use-notifications'
+import { Notification, NotificationType } from '@/types'
+import { MOCK_NOTIFICATIONS } from '@/lib/mock-data'
 import {
   Building2,
   Users,
@@ -23,36 +21,42 @@ import {
   CheckCircle,
   XCircle
 } from 'lucide-react'
-import { NotificationType } from '@prisma/client'
 
 export default function NotificationsPage() {
-  const { data: session, status } = useSession()
-  const router = useRouter()
-  const {
-    notifications,
-    unreadCount,
-    isLoading,
-    markAsRead,
-    markAllAsRead,
-    deleteNotification,
-  } = useNotifications()
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    if (status === 'unauthenticated') {
-      router.push('/login')
+    // Load mock notifications for demo
+    const loadNotifications = async () => {
+      setIsLoading(true)
+      // Simulate API call delay
+      await new Promise(resolve => setTimeout(resolve, 500))
+      setNotifications(MOCK_NOTIFICATIONS as Notification[])
+      setIsLoading(false)
     }
-  }, [status, router])
 
-  if (status === 'loading') {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
-      </div>
+    loadNotifications()
+  }, [])
+
+  const unreadCount = notifications.filter(n => !n.isRead).length
+
+  const markAsRead = async (notificationId: string) => {
+    setNotifications(prev =>
+      prev.map(n => n.id === notificationId ? { ...n, isRead: true } : n)
     )
   }
 
-  if (!session) {
-    return null
+  const markAllAsRead = async () => {
+    setNotifications(prev =>
+      prev.map(n => ({ ...n, isRead: true }))
+    )
+  }
+
+  const deleteNotification = async (notificationId: string) => {
+    setNotifications(prev =>
+      prev.filter(n => n.id !== notificationId)
+    )
   }
 
   const getNotificationIcon = (type: NotificationType) => {
@@ -107,8 +111,8 @@ export default function NotificationsPage() {
     return '#'
   }
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
+  const formatDate = (dateString: string | Date) => {
+    const date = typeof dateString === 'string' ? new Date(dateString) : dateString
     return date.toLocaleDateString('es-ES', {
       year: 'numeric',
       month: 'long',

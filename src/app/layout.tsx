@@ -8,7 +8,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Lilab Ops v1.1 - Project Management",
+  title: "Lilab Ops v1.2 - Project Management",
   description: "Internal project management system for efficient team collaboration",
 };
 

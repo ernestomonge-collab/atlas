@@ -1,6 +1,5 @@
 'use client'
 
-import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
@@ -11,30 +10,25 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { InviteUserModal } from '@/components/team/invite-user-modal'
 import { MainLayout } from '@/components/layout/main-layout'
 import { useInvitations } from '@/hooks/use-invitations'
-import { MOCK_TEAM_MEMBERS } from '@/lib/mock-data'
+import { MOCK_TEAM_MEMBERS, MOCK_USER } from '@/lib/mock-data'
 import { UserPlus, Users, Mail, Clock, CheckCircle, XCircle, Building2 } from 'lucide-react'
 import { UserRole, InvitationStatus } from '@prisma/client'
 import { User } from '@/types'
 
 export default function TeamPage() {
-  const { data: session, status } = useSession()
+  // Use mock user for demo
+  const session = { user: MOCK_USER }
   const router = useRouter()
   const { invitations, isLoading, refreshInvitations } = useInvitations()
   const [showInviteModal, setShowInviteModal] = useState(false)
   const [teamMembers, setTeamMembers] = useState<User[]>([])
   const [membersLoading, setMembersLoading] = useState(true)
 
-  useEffect(() => {
-    if (status === 'unauthenticated') {
-      router.push('/login')
-    }
-  }, [status, router])
+  // Remove auth redirect - using mock data
 
   useEffect(() => {
-    if (session?.user) {
-      fetchTeamMembers()
-    }
-  }, [session])
+    fetchTeamMembers()
+  }, [])
 
   const fetchTeamMembers = async () => {
     try {
@@ -51,17 +45,7 @@ export default function TeamPage() {
     }
   }
 
-  if (status === 'loading') {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
-      </div>
-    )
-  }
-
-  if (!session) {
-    return null
-  }
+  // Remove loading and auth checks - using mock data
 
   const isAdmin = session.user.role === 'ADMIN'
 

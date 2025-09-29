@@ -23,7 +23,7 @@ export default function HomePage() {
           <div className="flex justify-between items-center py-6">
             <div className="flex items-center">
               <Building2 className="h-8 w-8 text-blue-600 mr-2" />
-              <h1 className="text-2xl font-bold text-gray-900">Lilab Ops v1.1</h1>
+              <h1 className="text-2xl font-bold text-gray-900">Lilab Ops v1.2</h1>
             </div>
             <div className="space-x-4">
               <Link href="/login">
@@ -46,7 +46,7 @@ export default function HomePage() {
           </h1>
           <p className="mt-6 text-xl text-gray-600 max-w-3xl mx-auto">
             Built specifically for your organization&apos;s workflows. Streamline project management,
-            enhance team collaboration, and deliver results faster with Lilab Ops v1.1.
+            enhance team collaboration, and deliver results faster with Lilab Ops v1.2.
           </p>
           <div className="mt-10">
             <Link href="/register">
@@ -142,7 +142,7 @@ export default function HomePage() {
             Ready to streamline your project management?
           </h2>
           <p className="mt-4 text-lg text-gray-600">
-            Join teams who have already improved their productivity with Lilab Ops v1.1
+            Join teams who have already improved their productivity with Lilab Ops v1.2
           </p>
           <div className="mt-8">
             <Link href="/register">
@@ -156,7 +156,7 @@ export default function HomePage() {
       <footer className="bg-white border-t">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="text-center text-gray-600">
-            <p>&copy; 2024 Lilab Ops v1.1. Built for efficient team collaboration.</p>
+            <p>&copy; 2024 Lilab Ops v1.2. Built for efficient team collaboration.</p>
           </div>
         </div>
       </footer>

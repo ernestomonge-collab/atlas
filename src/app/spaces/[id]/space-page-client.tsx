@@ -1,8 +1,7 @@
 'use client'
 
-import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
-import React, { useEffect, useState } from 'react'
+import React, { useState } from 'react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -12,13 +11,14 @@ import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbP
 import { CreateProjectModal } from '@/components/projects/create-project-modal'
 import { AddMemberModal } from '@/components/spaces/add-member-modal'
 import { MainLayout } from '@/components/layout/main-layout'
-import { getMockSpaceById, getMockProjectsBySpaceId, getMockSpaceAnalytics } from '@/lib/mock-data'
+import { getMockSpaceById, getMockProjectsBySpaceId, getMockSpaceAnalytics, MOCK_USER } from '@/lib/mock-data'
 import { SpaceMember } from '@/types'
 import * as LucideIcons from 'lucide-react'
 import { Building2, Plus, Home, ChevronRight, BarChart3, Users, Clock, CheckCircle, UserPlus } from 'lucide-react'
 
 export function SpacePageClient({ spaceId }: { spaceId: string }) {
-  const { data: session, status } = useSession()
+  // Use mock user for demo
+  const session = { user: MOCK_USER }
   const router = useRouter()
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showAddMemberModal, setShowAddMemberModal] = useState(false)
@@ -28,24 +28,7 @@ export function SpacePageClient({ spaceId }: { spaceId: string }) {
   const projects = getMockProjectsBySpaceId(spaceId)
   const analytics = getMockSpaceAnalytics(spaceId)
 
-  // TEMP: Skip auth for demo
-  // useEffect(() => {
-  //   if (status === 'unauthenticated') {
-  //     router.push('/login')
-  //   }
-  // }, [status, router])
-
-  // if (status === 'loading') {
-  //   return (
-  //     <div className="min-h-screen flex items-center justify-center">
-  //       <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
-  //     </div>
-  //   )
-  // }
-
-  // if (!session) {
-  //   return null
-  // }
+  // Remove auth redirect - using mock data
 
   if (!space) {
     notFound()

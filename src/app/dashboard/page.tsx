@@ -1,8 +1,6 @@
 'use client'
 
-import { useSession } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -17,8 +15,6 @@ import { Space } from '@/types'
 import { Building2, Plus, Users, BarChart3, CheckCircle, Layers } from 'lucide-react'
 
 export default function DashboardPage() {
-  const { data: session, status } = useSession()
-  const router = useRouter()
   const { projects, isLoading, refreshProjects } = useProjects()
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showCreateSpaceModal, setShowCreateSpaceModal] = useState(false)

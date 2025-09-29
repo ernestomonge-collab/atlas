@@ -1,12 +1,11 @@
 'use client'
 
-import { ReactNode } from 'react'
-import { useSession, signOut } from 'next-auth/react'
+import { ReactNode, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { NotificationDropdown } from '@/components/notifications/notification-dropdown'
 import { Sidebar } from './sidebar'
 import { Menu, X } from 'lucide-react'
-import { useState } from 'react'
+import { MOCK_USER } from '@/lib/mock-data'
 
 interface MainLayoutProps {
   children: ReactNode
@@ -15,13 +14,11 @@ interface MainLayoutProps {
 }
 
 export function MainLayout({ children, title, description }: MainLayoutProps) {
-  const { data: session } = useSession()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
-  if (!session) {
-    return <>{children}</>
-  }
+  // Use mock user for demo
+  const session = { user: MOCK_USER }
 
   return (
     <div className="h-screen flex overflow-hidden bg-gray-50">
@@ -82,7 +79,7 @@ export function MainLayout({ children, title, description }: MainLayoutProps) {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => signOut({ callbackUrl: '/' })}
+                onClick={() => window.location.href = '/'}
               >
                 Cerrar Sesión
               </Button>
