@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { MainLayout } from '@/components/layout/main-layout'
 import { getMockTasksForCalendar } from '@/lib/mock-data'
+import { CalendarTask } from '@/types'
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
@@ -19,19 +20,6 @@ import {
   Filter
 } from 'lucide-react'
 
-interface CalendarTask {
-  id: string
-  title: string
-  description?: string
-  dueDate: string
-  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED'
-  priority: 'HIGH' | 'MEDIUM' | 'LOW'
-  projectName: string
-  assignee?: {
-    name: string
-    email: string
-  }
-}
 
 export default function CalendarPage() {
   const { data: session, status } = useSession()

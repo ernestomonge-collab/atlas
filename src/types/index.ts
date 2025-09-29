@@ -220,12 +220,12 @@ export enum SprintStatus {
 export interface CalendarTask {
   id: string;
   title: string;
-  description: string;
+  description?: string;
   dueDate: string;
   status: TaskStatus;
   priority: TaskPriority;
   projectName: string;
-  assignee: User;
+  assignee?: User;
 }
 
 // Dashboard Types
