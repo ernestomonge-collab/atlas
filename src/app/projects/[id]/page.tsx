@@ -21,6 +21,7 @@ import { ProjectConfigModal } from '@/components/projects/project-config-modal'
 import { EditTaskModal } from '@/components/tasks/edit-task-modal'
 import { getMockProjectById, getMockTasksByProjectId, getMockSubtasksByTaskId } from '@/lib/mock-data'
 import { ProjectConfig, getDefaultProjectConfig } from '@/lib/project-config'
+import { Project, Task, User, ProjectMember } from '@/types'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import {
@@ -77,8 +78,8 @@ interface ProjectDetailPageProps {
 export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
   const { data: session, status } = useSession()
   const router = useRouter()
-  const [project, setProject] = useState<any>(null)
-  const [tasks, setTasks] = useState<any[]>([])
+  const [project, setProject] = useState<Project | null>(null)
+  const [tasks, setTasks] = useState<Task[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [projectId, setProjectId] = useState<string | null>(null)
   const [isNewTaskModalOpen, setIsNewTaskModalOpen] = useState(false)
@@ -87,15 +88,15 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
   const [editProjectData, setEditProjectData] = useState({ name: '', description: '' })
   const [showConfigModal, setShowConfigModal] = useState(false)
   const [showEditTaskModal, setShowEditTaskModal] = useState(false)
-  const [taskToEdit, setTaskToEdit] = useState<any>(null)
+  const [taskToEdit, setTaskToEdit] = useState<Task | null>(null)
   const [viewMode, setViewMode] = useState<'kanban' | 'grid'>('grid')
   const [projectConfig, setProjectConfig] = useState<ProjectConfig | null>(null)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set())
-  const [teamMembers, setTeamMembers] = useState<any[]>([])
-  const [subtasks, setSubtasks] = useState<any[]>([])
+  const [teamMembers, setTeamMembers] = useState<ProjectMember[]>([])
+  const [subtasks, setSubtasks] = useState<Task[]>([])
   const [showConfigPanel, setShowConfigPanel] = useState(false)
-  const [activeTask, setActiveTask] = useState<any>(null)
+  const [activeTask, setActiveTask] = useState<Task | null>(null)
 
   // Configuración de sensores para drag and drop
   const sensors = useSensors(
@@ -135,7 +136,7 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
   }
 
   // Componente para tarjetas draggables
-  function DraggableTaskCard({ task }: { task: any }) {
+  function DraggableTaskCard({ task }: { task: Task }) {
     const [isHovering, setIsHovering] = useState(false)
     const [editingField, setEditingField] = useState<string | null>(null)
 
@@ -156,7 +157,7 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
       opacity: isDragging ? 0.5 : 1,
     }
 
-    const handleTaskUpdate = (field: string, value: any) => {
+    const handleTaskUpdate = (field: string, value: string | Date | null) => {
       const updatedTask = { ...task, [field]: value }
 
       // Update assignee object when assigneeId changes
@@ -383,7 +384,7 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
   }
 
   // Componente para columnas droppables
-  function DroppableColumn({ column }: { column: any }) {
+  function DroppableColumn({ column }: { column: { id: string; title: string; tasks: Task[] } }) {
     const { setNodeRef } = useDroppable({
       id: column.id,
     })
@@ -405,10 +406,10 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
         </div>
         <div className="p-4 space-y-3">
           <SortableContext
-            items={column.tasks.map((task: any) => task.id)}
+            items={column.tasks.map((task: Task) => task.id)}
             strategy={verticalListSortingStrategy}
           >
-            {column.tasks.map((task: any) => (
+            {column.tasks.map((task: Task) => (
               <DraggableTaskCard key={task.id} task={task} />
             ))}
           </SortableContext>
@@ -499,7 +500,7 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
       const response = await fetch(`/api/projects/${projectId}/members`)
       if (response.ok) {
         const projectMembers = await response.json()
-        const users = projectMembers.map((member: any) => member.user)
+        const users = projectMembers.map((member: ProjectMember) => member.user)
         setTeamMembers(users)
       }
     } catch (error) {
@@ -709,7 +710,7 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
     }))
   }
 
-  const handleTaskUpdated = (updatedTask: any) => {
+  const handleTaskUpdated = (updatedTask: Task) => {
     if (updatedTask.isSubtask) {
       // Handle subtask updates differently - we'll implement this with mock data updates
       console.log('Subtask updated:', updatedTask)
@@ -726,7 +727,7 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
   }
 
   // New function to handle subtask inline updates
-  const handleSubtaskUpdate = (subtaskId: string, field: string, value: any) => {
+  const handleSubtaskUpdate = (subtaskId: string, field: string, value: string | Date | null) => {
     setSubtasks(prevSubtasks =>
       prevSubtasks.map(subtask => {
         if (subtask.id === subtaskId) {
@@ -797,7 +798,7 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
 
     if (projectConfig.kanbanLayout === 'status') {
       // Group by custom statuses
-      const tasksByStatus: Record<string, any[]> = {}
+      const tasksByStatus: Record<string, Task[]> = {}
 
       projectConfig.statuses.forEach(status => {
         tasksByStatus[status.id] = tasks.filter(task =>
@@ -1041,7 +1042,7 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
                     .map(col => col.width || 'auto')
                     .join(' ')
 
-                  const renderColumnContent = (task: any, columnId: string) => {
+                  const renderColumnContent = (task: Task, columnId: string) => {
                     switch (columnId) {
                       case 'title':
                         {
@@ -1362,7 +1363,7 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
                     }
                   }
 
-                  const renderSubtaskRow = (subtask: any, enabledColumns: any[], gridTemplateColumns: string) => {
+                  const renderSubtaskRow = (subtask: Task, enabledColumns: ProjectConfig['enabledColumns'], gridTemplateColumns: string) => {
                     const getSubtaskStatusColor = (status: string) => {
                       switch (status) {
                         case 'COMPLETED': return 'bg-green-100 text-green-800'
@@ -1381,7 +1382,7 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
                       }
                     }
 
-                    const renderSubtaskColumnContent = (subtask: any, columnId: string) => {
+                    const renderSubtaskColumnContent = (subtask: Task, columnId: string) => {
                       switch (columnId) {
                         case 'title':
                           return (
@@ -1648,7 +1649,7 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
                       return [{ group: '', tasks: tasks }]
                     }
 
-                    const grouped: Record<string, any[]> = {}
+                    const grouped: Record<string, Task[]> = {}
 
                     tasks.forEach(task => {
                       let groupKey = ''
@@ -1989,7 +1990,7 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
                     if (projectConfig) {
                       handleConfigUpdated({
                         ...projectConfig,
-                        gridGroupBy: value as any
+                        gridGroupBy: value as ProjectConfig['gridGroupBy']
                       })
                     }
                   }}
@@ -2153,7 +2154,7 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
                 if (projectConfig) {
                   const resetConfig = {
                     ...projectConfig,
-                    gridGroupBy: 'none' as any
+                    gridGroupBy: 'none' as ProjectConfig['gridGroupBy']
                   }
                   handleConfigUpdated(resetConfig)
                 }

@@ -13,7 +13,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import * as LucideIcons from 'lucide-react'
-import { Space } from '@/types'
+import { Space, SpaceMember } from '@/types'
 import { EditSpaceModal } from './edit-space-modal'
 import { AddMemberModal } from './add-member-modal'
 
@@ -68,7 +68,7 @@ export function SpaceCard({ space }: SpaceCardProps) {
     // TODO: Update space in parent component or refresh data
   }
 
-  const handleMemberAdded = (newMember: any) => {
+  const handleMemberAdded = (newMember: SpaceMember) => {
     console.log('Member added:', newMember)
     // TODO: Update space members or refresh data
   }

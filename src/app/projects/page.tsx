@@ -19,6 +19,7 @@ import { EditProjectModal } from '@/components/projects/edit-project-modal'
 import { ManageProjectMembersModal } from '@/components/projects/manage-project-members-modal'
 import { MainLayout } from '@/components/layout/main-layout'
 import { useProjects } from '@/hooks/use-projects'
+import { Project } from '@/types'
 import { Building2, Plus, Users, Calendar, CheckCircle, Clock, MoreVertical, Edit, Trash2 } from 'lucide-react'
 
 export default function ProjectsPage() {
@@ -28,7 +29,7 @@ export default function ProjectsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [showMembersModal, setShowMembersModal] = useState(false)
-  const [selectedProject, setSelectedProject] = useState<any>(null)
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null)
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -52,21 +53,21 @@ export default function ProjectsPage() {
     refreshProjects()
   }
 
-  const handleEdit = (e: React.MouseEvent, project: any) => {
+  const handleEdit = (e: React.MouseEvent, project: Project) => {
     e.preventDefault()
     e.stopPropagation()
     setSelectedProject(project)
     setShowEditModal(true)
   }
 
-  const handleMembers = (e: React.MouseEvent, project: any) => {
+  const handleMembers = (e: React.MouseEvent, project: Project) => {
     e.preventDefault()
     e.stopPropagation()
     setSelectedProject(project)
     setShowMembersModal(true)
   }
 
-  const handleDelete = (e: React.MouseEvent, project: any) => {
+  const handleDelete = (e: React.MouseEvent, project: Project) => {
     e.preventDefault()
     e.stopPropagation()
     // TODO: Implement delete confirmation modal

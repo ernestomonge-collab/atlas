@@ -13,6 +13,7 @@ import { CreateSpaceModal } from '@/components/spaces/create-space-modal'
 import { MainLayout } from '@/components/layout/main-layout'
 import { useProjects } from '@/hooks/use-projects'
 import { getMockSpacesWithProjects } from '@/lib/mock-data'
+import { Space } from '@/types'
 import { Building2, Plus, Users, BarChart3, CheckCircle, Layers } from 'lucide-react'
 
 export default function DashboardPage() {
@@ -51,7 +52,7 @@ export default function DashboardPage() {
     refreshProjects()
   }
 
-  const handleSpaceCreated = (newSpace: any) => {
+  const handleSpaceCreated = (newSpace: Space) => {
     setSpaces(prevSpaces => [...prevSpaces, newSpace])
     console.log('Space created:', newSpace)
   }

@@ -14,6 +14,7 @@ import { Badge } from '@/components/ui/badge'
 import { useNotifications } from '@/hooks/use-notifications'
 import { Bell, Check, CheckCheck, X, AlertTriangle, Info, CheckCircle, XCircle } from 'lucide-react'
 import { NotificationType } from '@prisma/client'
+import { Notification } from '@/types'
 
 export function NotificationDropdown() {
   const {
@@ -47,7 +48,7 @@ export function NotificationDropdown() {
     }
   }
 
-  const getNotificationLink = (notification: any) => {
+  const getNotificationLink = (notification: Notification) => {
     if (notification.task) {
       return `/projects/${notification.task.projectId || 'unknown'}/tasks/${notification.task.id}`
     }
@@ -79,7 +80,7 @@ export function NotificationDropdown() {
     }
   }
 
-  const handleNotificationClick = async (notification: any) => {
+  const handleNotificationClick = async (notification: Notification) => {
     if (!notification.isRead) {
       await markAsRead(notification.id)
     }

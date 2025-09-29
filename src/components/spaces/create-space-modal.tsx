@@ -13,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Space } from '@/types'
 import { Badge } from '@/components/ui/badge'
 import * as LucideIcons from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -20,7 +21,7 @@ import { cn } from '@/lib/utils'
 interface CreateSpaceModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onSpaceCreated: (space: any) => void
+  onSpaceCreated: (space: Space) => void
 }
 
 // Predefined colors for spaces

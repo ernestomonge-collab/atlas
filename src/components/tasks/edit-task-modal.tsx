@@ -28,7 +28,14 @@ import { Checkbox } from '@/components/ui/checkbox'
 type TaskStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED'
 type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
 import { getMockSubtasksByTaskId } from '@/lib/mock-data'
-import { Loader2, Edit3, MessageSquare, Clock, Send, User, Paperclip, Upload, FileText, Download, Trash2, Plus, CheckCircle2, Circle } from 'lucide-react'
+import { Comment, Attachment } from '@/types'
+
+interface User {
+  id: string;
+  email: string;
+  name?: string;
+}
+import { Loader2, Edit3, MessageSquare, Clock, Send, User as UserIcon, Paperclip, Upload, FileText, Download, Trash2, Plus, CheckCircle2, Circle } from 'lucide-react'
 
 const editTaskSchema = z.object({
   title: z.string().min(1, 'Title is required').max(255, 'Title too long'),
@@ -90,10 +97,10 @@ export function EditTaskModal({
   const [error, setError] = useState<string | null>(null)
   const [teamMembers, setTeamMembers] = useState<User[]>([])
   const [activeTab, setActiveTab] = useState('details')
-  const [comments, setComments] = useState<any[]>([])
+  const [comments, setComments] = useState<Comment[]>([])
   const [newComment, setNewComment] = useState('')
   const [isSubmittingComment, setIsSubmittingComment] = useState(false)
-  const [attachments, setAttachments] = useState<any[]>([])
+  const [attachments, setAttachments] = useState<Attachment[]>([])
   const [isUploadingFile, setIsUploadingFile] = useState(false)
   const [subtasks, setSubtasks] = useState<Subtask[]>([])
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('')

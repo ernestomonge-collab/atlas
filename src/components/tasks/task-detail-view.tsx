@@ -16,8 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Task } from '@/hooks/use-task'
-import { Project } from '@/hooks/use-project'
+import { Task, Project, User, Sprint } from '@/types'
 import { TaskStatus, TaskPriority } from '@prisma/client'
 import { ArrowLeft, Loader2, Save, X } from 'lucide-react'
 
@@ -36,16 +35,11 @@ type EditTaskInput = z.infer<typeof editTaskSchema>
 interface TaskDetailViewProps {
   project: Project
   task: Task
-  onSave: (updates: any) => Promise<void>
+  onSave: (updates: Partial<Task>) => Promise<void>
   onCancel: () => void
   isEditing: boolean
 }
 
-interface User {
-  id: string
-  name?: string
-  email: string
-}
 
 interface Sprint {
   id: string
@@ -113,7 +107,7 @@ export function TaskDetailView({
       const response = await fetch(`/api/projects/${project.id}/sprints`)
       if (response.ok) {
         const sprintsData = await response.json()
-        const availableSprints = sprintsData.filter((sprint: any) =>
+        const availableSprints = sprintsData.filter((sprint: Sprint) =>
           sprint.status === 'PLANNING' || sprint.status === 'ACTIVE'
         )
         setSprints(availableSprints)

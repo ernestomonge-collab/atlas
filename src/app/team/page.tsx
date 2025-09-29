@@ -14,13 +14,14 @@ import { useInvitations } from '@/hooks/use-invitations'
 import { MOCK_TEAM_MEMBERS } from '@/lib/mock-data'
 import { UserPlus, Users, Mail, Clock, CheckCircle, XCircle, Building2 } from 'lucide-react'
 import { UserRole, InvitationStatus } from '@prisma/client'
+import { User } from '@/types'
 
 export default function TeamPage() {
   const { data: session, status } = useSession()
   const router = useRouter()
   const { invitations, isLoading, refreshInvitations } = useInvitations()
   const [showInviteModal, setShowInviteModal] = useState(false)
-  const [teamMembers, setTeamMembers] = useState<any[]>([])
+  const [teamMembers, setTeamMembers] = useState<User[]>([])
   const [membersLoading, setMembersLoading] = useState(true)
 
   useEffect(() => {

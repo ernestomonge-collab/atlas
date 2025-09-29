@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { MainLayout } from '@/components/layout/main-layout'
 import { getMockProjectById, getMockTasksByProjectId, MOCK_SPRINTS } from '@/lib/mock-data'
+import { Project, Task, Sprint, TaskPriority } from '@/types'
 import {
   ArrowLeft,
   Filter,
@@ -36,9 +37,9 @@ export default async function ProjectKanbanPage({ params }: KanbanPageProps) {
 function KanbanPageClient({ projectId }: { projectId: string }) {
   const { data: session, status } = useSession()
   const router = useRouter()
-  const [project, setProject] = useState<any>(null)
-  const [tasks, setTasks] = useState<any[]>([])
-  const [sprints, setSprints] = useState<any[]>([])
+  const [project, setProject] = useState<Project | null>(null)
+  const [tasks, setTasks] = useState<Task[]>([])
+  const [sprints, setSprints] = useState<Sprint[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [sprintFilter, setSprintFilter] = useState<string>('all')
 
@@ -140,7 +141,7 @@ function KanbanPageClient({ projectId }: { projectId: string }) {
 
   const getTaskSprint = (taskId: string) => {
     for (const sprint of sprints) {
-      if (sprint.tasks.some((t: any) => t.id === taskId)) {
+      if (sprint.tasks.some((t: Task) => t.id === taskId)) {
         return sprint
       }
     }
@@ -167,7 +168,7 @@ function KanbanPageClient({ projectId }: { projectId: string }) {
     } else {
       const selectedSprint = sprints.find(s => s.id === sprintFilter)
       if (selectedSprint) {
-        const sprintTaskIds = selectedSprint.tasks.map((t: any) => t.id)
+        const sprintTaskIds = selectedSprint.tasks.map((t: Task) => t.id)
         filteredTasks = tasks.filter(task => sprintTaskIds.includes(task.id))
       }
     }
@@ -185,7 +186,7 @@ function KanbanPageClient({ projectId }: { projectId: string }) {
     })
   }
 
-  const TaskCard = ({ task }: { task: any }) => {
+  const TaskCard = ({ task }: { task: Task }) => {
     const taskSprint = getTaskSprint(task.id)
 
     return (
@@ -247,8 +248,8 @@ function KanbanPageClient({ projectId }: { projectId: string }) {
 
   const PriorityColumn = ({ title, tasks, priority, color }: {
     title: string
-    tasks: any[]
-    priority: string
+    tasks: Task[]
+    priority: TaskPriority
     color: string
   }) => (
     <div className="flex-1">

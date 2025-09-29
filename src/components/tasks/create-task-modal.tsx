@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { TaskPriority } from '@prisma/client'
+import { User, ProjectMember, Sprint } from '@/types'
 import { Loader2, ListTodo } from 'lucide-react'
 
 const taskSchema = z.object({
@@ -109,7 +110,7 @@ export function CreateTaskModal({
       if (response.ok) {
         const projectMembers = await response.json()
         // Extract user data from project members
-        const users = projectMembers.map((member: any) => member.user)
+        const users = projectMembers.map((member: ProjectMember) => member.user)
         setTeamMembers(users)
       }
     } catch (error) {
@@ -123,7 +124,7 @@ export function CreateTaskModal({
       if (response.ok) {
         const sprintsData = await response.json()
         // Only show active and planning sprints
-        const availableSprints = sprintsData.filter((sprint: any) =>
+        const availableSprints = sprintsData.filter((sprint: Sprint) =>
           sprint.status === 'PLANNING' || sprint.status === 'ACTIVE'
         )
         setSprints(availableSprints)

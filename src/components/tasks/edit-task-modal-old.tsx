@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { TaskPriority, TaskStatus } from '@prisma/client'
+import { Comment, ProjectMember } from '@/types'
 import { Loader2, Edit3, MessageSquare, Clock } from 'lucide-react'
 
 const editTaskSchema = z.object({
@@ -33,6 +34,7 @@ const editTaskSchema = z.object({
   priority: z.nativeEnum(TaskPriority),
   dueDate: z.string().optional(),
   assigneeId: z.string().optional(),
+  sprintId: z.string().optional(),
 })
 
 type EditTaskInput = z.infer<typeof editTaskSchema>
@@ -81,9 +83,10 @@ export function EditTaskModal({
   const [error, setError] = useState<string | null>(null)
   const [teamMembers, setTeamMembers] = useState<User[]>([])
   const [activeTab, setActiveTab] = useState('details')
-  const [comments, setComments] = useState<any[]>([])
+  const [comments, setComments] = useState<Comment[]>([])
   const [newComment, setNewComment] = useState('')
   const [isSubmittingComment, setIsSubmittingComment] = useState(false)
+  const [sprints, setSprints] = useState<Sprint[]>([])
 
   const {
     register,
@@ -121,7 +124,7 @@ export function EditTaskModal({
       const response = await fetch(`/api/projects/${projectId}/members`)
       if (response.ok) {
         const projectMembers = await response.json()
-        const users = projectMembers.map((member: any) => member.user)
+        const users = projectMembers.map((member: ProjectMember) => member.user)
         setTeamMembers(users)
       }
     } catch (error) {
@@ -260,8 +263,9 @@ export function EditTaskModal({
             </TabsTrigger>
           </TabsList>
 
-        {task && (
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <TabsContent value="details">
+            {task && (
+              <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             {error && (
               <div className="p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md">
                 {error}
@@ -437,9 +441,27 @@ export function EditTaskModal({
                   'Guardar Cambios'
                 )}
               </Button>
+              </div>
+            </form>
+            )}
+          </TabsContent>
+
+          <TabsContent value="comments">
+            <div className="space-y-4">
+              <div className="text-sm text-gray-600">
+                Funcionalidad de comentarios en desarrollo
+              </div>
             </div>
-          </form>
-        )}
+          </TabsContent>
+
+          <TabsContent value="history">
+            <div className="space-y-4">
+              <div className="text-sm text-gray-600">
+                Funcionalidad de trazabilidad en desarrollo
+              </div>
+            </div>
+          </TabsContent>
+        </Tabs>
       </DialogContent>
     </Dialog>
   )

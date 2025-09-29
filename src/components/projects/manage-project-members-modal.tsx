@@ -226,7 +226,7 @@ export function ManageProjectMembersModal({
             <DialogTitle>Gestionar Miembros del Proyecto</DialogTitle>
           </div>
           <DialogDescription>
-            Administra quién tiene acceso al proyecto "{projectName}" y sus permisos.
+            Administra quién tiene acceso al proyecto &quot;{projectName}&quot; y sus permisos.
           </DialogDescription>
         </DialogHeader>
 
@@ -290,7 +290,7 @@ export function ManageProjectMembersModal({
                     <Label htmlFor="role">Rol</Label>
                     <Select
                       value={selectedRole}
-                      onValueChange={(value) => setValue('role', value as any)}
+                      onValueChange={(value) => setValue('role', value as 'OWNER' | 'ADMIN' | 'MEMBER' | 'VIEWER')}
                       disabled={isLoading}
                     >
                       <SelectTrigger>

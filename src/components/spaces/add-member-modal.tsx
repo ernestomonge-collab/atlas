@@ -18,13 +18,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { SpaceMember } from '@/types'
 import { Badge } from '@/components/ui/badge'
 import { UserPlus, Users, Shield } from 'lucide-react'
 
 interface AddMemberModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onMemberAdded: (member: any) => void
+  onMemberAdded: (member: SpaceMember) => void
   spaceName: string
 }
 

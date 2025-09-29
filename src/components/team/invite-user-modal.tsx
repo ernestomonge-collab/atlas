@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { UserRole } from '@prisma/client'
+import { Invitation } from '@/types'
 import { Loader2, UserPlus, Copy, Check } from 'lucide-react'
 
 const inviteUserSchema = z.object({
@@ -34,7 +35,7 @@ type InviteUserInput = z.infer<typeof inviteUserSchema>
 interface InviteUserModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onUserInvited: (invitation: any) => void
+  onUserInvited: (invitation: Invitation) => void
 }
 
 export function InviteUserModal({
@@ -44,7 +45,7 @@ export function InviteUserModal({
 }: InviteUserModalProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [invitationSent, setInvitationSent] = useState<any>(null)
+  const [invitationSent, setInvitationSent] = useState<Invitation | null>(null)
   const [copied, setCopied] = useState(false)
 
   const {

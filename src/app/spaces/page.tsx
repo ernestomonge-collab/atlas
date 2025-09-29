@@ -10,6 +10,7 @@ import { MainLayout } from '@/components/layout/main-layout'
 import { SpaceCard } from '@/components/spaces/space-card'
 import { CreateSpaceModal } from '@/components/spaces/create-space-modal'
 import { getMockSpacesWithProjects } from '@/lib/mock-data'
+import { Space } from '@/types'
 import { Layers, Plus, Building2, BarChart3, Users, Clock } from 'lucide-react'
 
 export default function SpacesPage() {
@@ -41,7 +42,7 @@ export default function SpacesPage() {
   const completedTasks = spaces.reduce((sum, space) => sum + space.analytics.completedTasks, 0)
   const overallProgress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0
 
-  const handleSpaceCreated = (newSpace: any) => {
+  const handleSpaceCreated = (newSpace: Space) => {
     // Add the new space to the local state
     setSpaces(prevSpaces => [...prevSpaces, newSpace])
     console.log('Space created:', newSpace)

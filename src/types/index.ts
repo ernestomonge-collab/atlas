@@ -197,6 +197,37 @@ export interface ProgressStats {
   percentage: number;
 }
 
+// Sprint Types
+export interface Sprint {
+  id: string;
+  name: string;
+  description?: string;
+  startDate: Date;
+  endDate: Date;
+  status: SprintStatus;
+  projectId: string;
+  tasks: Task[];
+}
+
+export enum SprintStatus {
+  PLANNED = 'PLANNED',
+  ACTIVE = 'ACTIVE',
+  COMPLETED = 'COMPLETED',
+  CANCELLED = 'CANCELLED'
+}
+
+// Calendar Types
+export interface CalendarTask {
+  id: string;
+  title: string;
+  description: string;
+  dueDate: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  projectName: string;
+  assignee: User;
+}
+
 // Dashboard Types
 export interface DashboardData {
   spaces: Space[];

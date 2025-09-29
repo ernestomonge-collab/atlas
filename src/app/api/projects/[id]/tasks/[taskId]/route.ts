@@ -66,9 +66,10 @@ async function updateTask(
     const updateData = updateTaskSchema.parse(body)
 
     // Handle dueDate conversion
-    const processedData = { ...updateData } as any
-    if (updateData.dueDate !== undefined) {
-      processedData.dueDate = updateData.dueDate ? new Date(updateData.dueDate) : null
+    const { dueDate: dueDateString, ...restData } = updateData
+    const processedData = {
+      ...restData,
+      dueDate: dueDateString ? new Date(dueDateString) : null
     }
 
     // Verify assignee exists in organization if provided
@@ -140,7 +141,7 @@ async function updateTask(
     })
 
     // Send notifications for task updates
-    const updaterName = session.user.name || session.user.email
+    const updaterName = session.user.name || session.user.email || 'Usuario'
 
     // If task was assigned to someone new, notify them
     if (updateData.assigneeId && updateData.assigneeId !== existingTask.assigneeId) {

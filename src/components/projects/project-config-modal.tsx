@@ -110,7 +110,7 @@ export function ProjectConfigModal({
             <DialogTitle>Configurar Proyecto</DialogTitle>
           </div>
           <DialogDescription>
-            Personaliza las columnas visibles para el proyecto "{projectName}"
+            Personaliza las columnas visibles para el proyecto &quot;{projectName}&quot;
           </DialogDescription>
         </DialogHeader>
 

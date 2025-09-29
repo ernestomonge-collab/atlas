@@ -14,6 +14,7 @@ import { useProject } from '@/hooks/use-project'
 import { useTask } from '@/hooks/use-task'
 import { ArrowLeft, Edit, Trash2, User, Calendar, Flag } from 'lucide-react'
 import { TaskStatus, TaskPriority } from '@prisma/client'
+import { Task } from '@/types'
 
 export default async function TaskDetailPage({
   params
@@ -60,7 +61,7 @@ function TaskDetailClient({ projectId, taskId }: { projectId: string; taskId: st
     )
   }
 
-  const handleTaskUpdate = async (updates: any) => {
+  const handleTaskUpdate = async (updates: Partial<Task>) => {
     try {
       await updateTask(updates)
       setIsEditing(false)

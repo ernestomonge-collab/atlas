@@ -13,6 +13,7 @@ import { CreateProjectModal } from '@/components/projects/create-project-modal'
 import { AddMemberModal } from '@/components/spaces/add-member-modal'
 import { MainLayout } from '@/components/layout/main-layout'
 import { getMockSpaceById, getMockProjectsBySpaceId, getMockSpaceAnalytics } from '@/lib/mock-data'
+import { SpaceMember } from '@/types'
 import * as LucideIcons from 'lucide-react'
 import { Building2, Plus, Home, ChevronRight, BarChart3, Users, Clock, CheckCircle, UserPlus } from 'lucide-react'
 
@@ -55,7 +56,7 @@ export function SpacePageClient({ spaceId }: { spaceId: string }) {
     console.log('Project created for space:', space.id)
   }
 
-  const handleMemberAdded = (newMember: any) => {
+  const handleMemberAdded = (newMember: SpaceMember) => {
     setSpaceMembers(prevMembers => [...prevMembers, newMember])
     console.log('Member added to space:', newMember)
   }

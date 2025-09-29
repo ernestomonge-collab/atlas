@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { MainLayout } from '@/components/layout/main-layout'
+import { Notification } from '@/types'
 import { useNotifications } from '@/hooks/use-notifications'
 import {
   Building2,
@@ -96,7 +97,7 @@ export default function NotificationsPage() {
     }
   }
 
-  const getNotificationLink = (notification: any) => {
+  const getNotificationLink = (notification: Notification) => {
     if (notification.task) {
       return `/projects/${notification.project?.id || 'unknown'}/tasks/${notification.task.id}`
     }
@@ -117,7 +118,7 @@ export default function NotificationsPage() {
     })
   }
 
-  const handleNotificationClick = async (notification: any) => {
+  const handleNotificationClick = async (notification: Notification) => {
     if (!notification.isRead) {
       await markAsRead(notification.id)
     }
