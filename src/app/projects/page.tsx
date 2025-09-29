@@ -235,7 +235,8 @@ export default function ProjectsPage() {
       {selectedProject && (
         <>
           <EditProjectModal
-            project={selectedProject}
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            project={selectedProject as any}
             open={showEditModal}
             onOpenChange={setShowEditModal}
             onProjectUpdated={(updatedProject) => {
