@@ -201,8 +201,8 @@ export default function NotificationsPage() {
                             </p>
                             {(notification.task || notification.project) && (
                               <Link
-                                href={getNotificationLink(notification)}
-                                onClick={() => handleNotificationClick(notification)}
+                                href={getNotificationLink(notification as unknown as Notification)}
+                                onClick={() => handleNotificationClick(notification as unknown as Notification)}
                                 className="text-sm text-blue-600 hover:text-blue-800 font-medium"
                               >
                                 Ver detalles →
