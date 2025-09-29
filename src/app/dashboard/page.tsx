@@ -53,7 +53,20 @@ export default function DashboardPage() {
   }
 
   const handleSpaceCreated = (newSpace: Space) => {
-    setSpaces(prevSpaces => [...prevSpaces, newSpace as unknown as typeof prevSpaces[0]])
+    // Create the extended space with default analytics and empty projects
+    const extendedSpace = {
+      ...newSpace,
+      projects: [],
+      analytics: {
+        totalProjects: 0,
+        totalTasks: 0,
+        completedTasks: 0,
+        inProgressTasks: 0,
+        pendingTasks: 0,
+        overallProgress: 0
+      }
+    }
+    setSpaces(prevSpaces => [...prevSpaces, extendedSpace])
     console.log('Space created:', newSpace)
   }
 
@@ -195,7 +208,7 @@ export default function DashboardPage() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {spaces.map((space) => (
-                  <SpaceCard key={space.id} space={space as unknown as Space} />
+                  <SpaceCard key={space.id} space={space} />
                 ))}
               </div>
             )}
