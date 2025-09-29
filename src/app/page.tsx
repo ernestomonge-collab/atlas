@@ -10,10 +10,10 @@ import { Building2, CheckCircle, Users, BarChart3, Zap } from 'lucide-react'
 export default function HomePage() {
   const router = useRouter()
 
-  useEffect(() => {
-    // Redirect directly to dashboard for demo purposes
-    router.push('/dashboard')
-  }, [router])
+  // useEffect(() => {
+  //   // Redirect directly to dashboard for demo purposes
+  //   router.push('/dashboard')
+  // }, [router])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
