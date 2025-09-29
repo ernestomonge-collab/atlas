@@ -63,6 +63,7 @@ function TaskDetailClient({ projectId, taskId }: { projectId: string; taskId: st
 
   const handleTaskUpdate = async (updates: Partial<Task>) => {
     try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await updateTask(updates as any)
       setIsEditing(false)
     } catch (error) {
@@ -114,8 +115,8 @@ function TaskDetailClient({ projectId, taskId }: { projectId: string; taskId: st
   if (isEditing) {
     return (
       <TaskDetailView
-        project={project}
-        task={task}
+        project={project as any}
+        task={task as any}
         onSave={handleTaskUpdate}
         onCancel={() => setIsEditing(false)}
         isEditing={true}
