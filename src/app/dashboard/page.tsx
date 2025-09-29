@@ -53,7 +53,7 @@ export default function DashboardPage() {
   }
 
   const handleSpaceCreated = (newSpace: Space) => {
-    setSpaces(prevSpaces => [...prevSpaces, newSpace as typeof prevSpaces[0]])
+    setSpaces(prevSpaces => [...prevSpaces, newSpace as unknown as typeof prevSpaces[0]])
     console.log('Space created:', newSpace)
   }
 
