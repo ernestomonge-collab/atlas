@@ -55,7 +55,7 @@ export default function CalendarPage() {
       await new Promise(resolve => setTimeout(resolve, 600))
 
       const calendarTasks = getMockTasksForCalendar()
-      setTasks(calendarTasks)
+      setTasks(calendarTasks as CalendarTask[])
     } catch (error) {
       console.error('Error fetching calendar data:', error)
     } finally {
