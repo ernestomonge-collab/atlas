@@ -163,18 +163,21 @@ export default function ProjectsPage() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-48">
+                        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                         <DropdownMenuItem onClick={(e) => handleEdit(e, project as any)}>
                           <Edit className="mr-2 h-4 w-4" />
                           Editar proyecto
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={(e) => handleMembers(e, project)}>
+                        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                        <DropdownMenuItem onClick={(e) => handleMembers(e, project as any)}>
                           <Users className="mr-2 h-4 w-4" />
                           Gestionar miembros
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
                           className="text-red-600"
-                          onClick={(e) => handleDelete(e, project)}
+                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                          onClick={(e) => handleDelete(e, project as any)}
                         >
                           <Trash2 className="mr-2 h-4 w-4" />
                           Eliminar proyecto
