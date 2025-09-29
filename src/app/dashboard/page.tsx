@@ -66,7 +66,7 @@ export default function DashboardPage() {
         overallProgress: 0
       }
     }
-    setSpaces(prevSpaces => [...prevSpaces, extendedSpace])
+    setSpaces(prevSpaces => [...prevSpaces, extendedSpace as unknown as typeof prevSpaces[0]])
     console.log('Space created:', newSpace)
   }
 
