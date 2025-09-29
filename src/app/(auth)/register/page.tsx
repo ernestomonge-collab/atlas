@@ -72,7 +72,7 @@ export default function RegisterPage() {
           <div className="flex justify-center mb-4">
             <Building2 className="h-12 w-12 text-blue-600" />
           </div>
-          <CardTitle className="text-2xl font-bold">Welcome to Lilab Ops v1</CardTitle>
+          <CardTitle className="text-2xl font-bold">Welcome to Lilab Ops v1.1</CardTitle>
           <CardDescription>
             Create your organization and start managing projects
           </CardDescription>
