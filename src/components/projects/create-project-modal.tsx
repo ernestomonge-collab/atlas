@@ -1,9 +1,6 @@
 'use client'
 
-import { useState } from 'react'
-import * as React from 'react'
-import { useForm, Controller } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
+import { useState, useEffect } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -22,21 +19,38 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { projectSchema, type ProjectInput } from '@/lib/validations'
-import {
-  ProjectStatus,
-  DEFAULT_STATUSES,
-  PROJECT_TYPES
-} from '@/lib/project-config'
 import { Badge } from '@/components/ui/badge'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2, Building2, Users, Briefcase, UserCheck, Plus, Zap, Layers, GitBranch, Workflow, Settings, Palette, Trash2, GripVertical } from 'lucide-react'
+import { ProjectTemplate } from '@/types'
+import { Loader2, Building2, Calendar, Plus, Trash2, Folder } from 'lucide-react'
+import * as LucideIcons from 'lucide-react'
+import { toast } from 'sonner'
+
+interface Space {
+  id: number
+  name: string
+  description?: string
+  color?: string
+  icon?: string
+  templateId?: number | null
+}
+
+interface Sprint {
+  id: string
+  name: string
+  startDate: string
+  endDate: string
+  order: number
+}
 
 interface Project {
   id: string
   name: string
   description?: string
+  startDate?: string
+  endDate?: string
+  sprints?: Sprint[]
   createdAt: string
   updatedAt: string
   organizationId: string
@@ -46,120 +60,121 @@ interface CreateProjectModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onProjectCreated: (project: Project) => void
+  spaceId?: number // Optional spaceId, pre-selects the space
 }
 
 export function CreateProjectModal({
   open,
   onOpenChange,
-  onProjectCreated
+  onProjectCreated,
+  spaceId
 }: CreateProjectModalProps) {
   const [isLoading, setIsLoading] = useState(false)
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false)
+  const [isLoadingSpaces, setIsLoadingSpaces] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [selectedProjectType, setSelectedProjectType] = useState<string>('General')
-  const [customStatuses, setCustomStatuses] = useState<ProjectStatus[]>([])
-  const [newStatusName, setNewStatusName] = useState('')
-  const [newStatusColor, setNewStatusColor] = useState('bg-gray-100 text-gray-800')
+  const [templates, setTemplates] = useState<ProjectTemplate[]>([])
+  const [spaces, setSpaces] = useState<Space[]>([])
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('')
+  const [selectedSpaceId, setSelectedSpaceId] = useState<string>(spaceId?.toString() || '')
+  const [projectName, setProjectName] = useState('')
+  const [projectDescription, setProjectDescription] = useState('')
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+  const [sprintDuration, setSprintDuration] = useState('2') // weeks
+  const [sprints, setSprints] = useState<Sprint[]>([])
 
-  const statusColorOptions = [
-    { value: 'bg-gray-100 text-gray-800', label: 'Gris', color: 'bg-gray-100' },
-    { value: 'bg-blue-100 text-blue-800', label: 'Azul', color: 'bg-blue-100' },
-    { value: 'bg-green-100 text-green-800', label: 'Verde', color: 'bg-green-100' },
-    { value: 'bg-yellow-100 text-yellow-800', label: 'Amarillo', color: 'bg-yellow-100' },
-    { value: 'bg-red-100 text-red-800', label: 'Rojo', color: 'bg-red-100' },
-    { value: 'bg-purple-100 text-purple-800', label: 'Morado', color: 'bg-purple-100' },
-    { value: 'bg-orange-100 text-orange-800', label: 'Naranja', color: 'bg-orange-100' },
-  ]
-
-  const {
-    register,
-    handleSubmit,
-    reset,
-    control,
-    watch,
-    formState: { errors },
-  } = useForm<ProjectInput>({
-    resolver: zodResolver(projectSchema),
-  })
-
-  const selectedType = watch('type')
-  const selectedTargetEntity = watch('targetEntity')
-  const [showCustomInput, setShowCustomInput] = useState(false)
-
-  // Lista de departamentos/áreas disponibles
-  const departments = [
-    'Desarrollo',
-    'Diseño',
-    'Marketing',
-    'Ventas',
-    'Recursos Humanos',
-    'Finanzas',
-    'Operaciones',
-    'Soporte Técnico',
-    'Calidad',
-    'Investigación y Desarrollo'
-  ]
-
-  // Lista de clientes disponibles (esto podría venir de una API en el futuro)
-  const clients = [
-    'Empresa ABC S.A.',
-    'Corporación XYZ',
-    'Grupo Innovación',
-    'Tecnologías del Futuro',
-    'Soluciones Digitales Ltda.',
-    'Consultoría Estratégica',
-    'Desarrollo Sostenible S.A.',
-    'Sistemas Avanzados'
-  ]
-
-  // Metodologías de proyecto disponibles
-  const methodologies = [
-    {
-      value: 'SCRUM',
-      label: 'Scrum',
-      description: 'Framework ágil con sprints y ceremonias',
-      icon: Zap
-    },
-    {
-      value: 'KANBAN',
-      label: 'Kanban',
-      description: 'Flujo continuo con tablero visual',
-      icon: Layers
-    },
-    {
-      value: 'HYBRID',
-      label: 'Híbrida',
-      description: 'Combinación de metodologías ágiles',
-      icon: GitBranch
-    },
-    {
-      value: 'WATERFALL',
-      label: 'Waterfall',
-      description: 'Desarrollo secuencial tradicional',
-      icon: Workflow
-    },
-    {
-      value: 'OTHER',
-      label: 'Otra',
-      description: 'Metodología personalizada',
-      icon: Settings
+  // Fetch templates and spaces from API
+  useEffect(() => {
+    if (open) {
+      fetchTemplates()
+      fetchSpaces()
     }
-  ]
+  }, [open])
 
-  const onSubmit = async (data: ProjectInput) => {
+  // Auto-select template when space is selected
+  useEffect(() => {
+    if (selectedSpaceId && spaces.length > 0) {
+      const selectedSpace = spaces.find(s => s.id.toString() === selectedSpaceId)
+      if (selectedSpace?.templateId) {
+        // Auto-select the space's template whenever space changes
+        setSelectedTemplateId(selectedSpace.templateId.toString())
+      }
+    }
+  }, [selectedSpaceId, spaces])
+
+  const fetchTemplates = async () => {
+    try {
+      setIsLoadingTemplates(true)
+      const response = await fetch('/api/templates')
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch templates')
+      }
+
+      const data = await response.json()
+      setTemplates(data)
+    } catch (error) {
+      console.error('Error fetching templates:', error)
+      setError('Error al cargar plantillas')
+    } finally {
+      setIsLoadingTemplates(false)
+    }
+  }
+
+  const fetchSpaces = async () => {
+    try {
+      setIsLoadingSpaces(true)
+      const response = await fetch('/api/spaces')
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch spaces')
+      }
+
+      const data = await response.json()
+      setSpaces(data)
+    } catch (error) {
+      console.error('Error fetching spaces:', error)
+    } finally {
+      setIsLoadingSpaces(false)
+    }
+  }
+
+  const selectedTemplate = templates.find(t => t.id.toString() === selectedTemplateId)
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    if (!selectedSpaceId) {
+      setError('Debes seleccionar un espacio')
+      return
+    }
+
+    if (!projectName.trim()) {
+      setError('El nombre del proyecto es requerido')
+      return
+    }
+
+    if (!selectedTemplateId) {
+      setError('Debes seleccionar una plantilla')
+      return
+    }
+
     setIsLoading(true)
     setError(null)
 
     try {
-      const projectData = {
-        ...data,
-        projectType: selectedProjectType,
-        customStatuses: customStatuses
-      }
-
       const response = await fetch('/api/projects', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(projectData),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: projectName.trim(),
+          description: projectDescription.trim() || null,
+          spaceId: parseInt(selectedSpaceId),
+          templateId: selectedTemplateId ? parseInt(selectedTemplateId) : null,
+        }),
       })
 
       if (!response.ok) {
@@ -167,411 +182,416 @@ export function CreateProjectModal({
         throw new Error(errorData.error || 'Failed to create project')
       }
 
-      const project = await response.json()
-      onProjectCreated(project)
-      reset()
-      setSelectedProjectType('General')
-      setCustomStatuses([])
-      setNewStatusName('')
+      const newProject = await response.json()
+
+      // If sprints were configured, create them
+      if (sprints.length > 0) {
+        for (const sprint of sprints) {
+          await fetch(`/api/projects/${newProject.id}/sprints`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              name: sprint.name,
+              startDate: sprint.startDate ? new Date(sprint.startDate).toISOString() : null,
+              endDate: sprint.endDate ? new Date(sprint.endDate).toISOString() : null,
+              status: 'PLANNING',
+            }),
+          })
+        }
+      }
+
+      toast.success('Proyecto creado exitosamente')
+      onProjectCreated(newProject)
+      handleReset()
       onOpenChange(false)
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'An error occurred')
+      const errorMessage = error instanceof Error ? error.message : 'Ocurrió un error'
+      setError(errorMessage)
+      toast.error(errorMessage)
     } finally {
       setIsLoading(false)
     }
   }
 
+  const handleReset = () => {
+    setProjectName('')
+    setProjectDescription('')
+    setSelectedTemplateId('')
+    setSelectedSpaceId(spaceId?.toString() || '')
+    setStartDate('')
+    setEndDate('')
+    setSprintDuration('2')
+    setSprints([])
+    setError(null)
+  }
+
   const handleOpenChange = (newOpen: boolean) => {
     if (!newOpen) {
-      reset()
-      setError(null)
-      setShowCustomInput(false)
-      setSelectedProjectType('General')
-      setCustomStatuses([])
-      setNewStatusName('')
+      handleReset()
     }
     onOpenChange(newOpen)
   }
 
-  // Initialize custom statuses when project type changes
-  React.useEffect(() => {
-    const defaultStatuses = DEFAULT_STATUSES[selectedProjectType] || DEFAULT_STATUSES['General']
-    setCustomStatuses(defaultStatuses.map(status => ({ ...status })))
-  }, [selectedProjectType])
+  const generateSprints = () => {
+    if (!startDate || !endDate || !sprintDuration) return
 
-  // Reset custom input when project type changes
-  React.useEffect(() => {
-    setShowCustomInput(false)
-  }, [selectedType])
+    const start = new Date(startDate)
+    const end = new Date(endDate)
+    const durationWeeks = parseInt(sprintDuration)
+    const durationMs = durationWeeks * 7 * 24 * 60 * 60 * 1000
 
-  const handleApplyTemplate = (templateName: string) => {
-    const templateStatuses = DEFAULT_STATUSES[templateName]
-    if (templateStatuses) {
-      setCustomStatuses(templateStatuses.map(status => ({ ...status })))
+    const newSprints: Sprint[] = []
+    let currentStart = new Date(start)
+    let sprintNumber = 1
+
+    while (currentStart < end) {
+      const currentEnd = new Date(Math.min(
+        currentStart.getTime() + durationMs,
+        end.getTime()
+      ))
+
+      newSprints.push({
+        id: `sprint-${Date.now()}-${sprintNumber}`,
+        name: `Sprint ${sprintNumber}`,
+        startDate: currentStart.toISOString().split('T')[0],
+        endDate: currentEnd.toISOString().split('T')[0],
+        order: sprintNumber
+      })
+
+      currentStart = new Date(currentEnd.getTime() + 24 * 60 * 60 * 1000) // +1 day
+      sprintNumber++
     }
+
+    setSprints(newSprints)
   }
 
-  const handleAddStatus = () => {
-    if (!newStatusName.trim()) return
-
-    const newStatus: ProjectStatus = {
-      id: `status-${Date.now()}`,
-      name: newStatusName.trim(),
-      color: newStatusColor,
-      order: customStatuses.length
-    }
-
-    setCustomStatuses([...customStatuses, newStatus])
-    setNewStatusName('')
+  const handleRemoveSprint = (sprintId: string) => {
+    const updated = sprints.filter(s => s.id !== sprintId)
+    // Reorder
+    const reordered = updated.map((s, idx) => ({ ...s, order: idx + 1, name: `Sprint ${idx + 1}` }))
+    setSprints(reordered)
   }
 
-  const handleRemoveStatus = (statusId: string) => {
-    setCustomStatuses(customStatuses.filter(s => s.id !== statusId))
-  }
-
-  const handleUpdateStatus = (statusId: string, updates: Partial<ProjectStatus>) => {
-    setCustomStatuses(customStatuses.map(s =>
-      s.id === statusId ? { ...s, ...updates } : s
+  const handleUpdateSprint = (sprintId: string, field: 'startDate' | 'endDate', value: string) => {
+    setSprints(sprints.map(s =>
+      s.id === sprintId ? { ...s, [field]: value } : s
     ))
+  }
+
+  const getCategoryLabel = (category: string) => {
+    const labels: Record<string, string> = {
+      'DESARROLLO_SOFTWARE': 'Desarrollo',
+      'MARKETING': 'Marketing',
+      'DISENO': 'Diseño',
+      'VENTAS': 'Ventas',
+      'OPERACIONES': 'Operaciones',
+      'RECURSOS_HUMANOS': 'RRHH',
+      'GENERAL': 'General',
+      'PERSONALIZADO': 'Personalizado'
+    }
+    return labels[category] || category
   }
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[800px] max-h-[80vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[700px] max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <div className="flex items-center gap-2">
             <Building2 className="h-5 w-5 text-blue-600" />
-            <DialogTitle>Create New Project</DialogTitle>
+            <DialogTitle>Crear Nuevo Proyecto</DialogTitle>
           </div>
           <DialogDescription>
-            Create a new project to organize your team&apos;s work and tasks.
+            Crea un proyecto seleccionando una plantilla de estados predefinida
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <Tabs defaultValue="basic" className="w-full">
+        <form onSubmit={onSubmit} className="space-y-4">
           {error && (
             <div className="p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md">
               {error}
             </div>
           )}
 
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="basic">Información Básica</TabsTrigger>
-            <TabsTrigger value="states">Estados Personalizados</TabsTrigger>
-          </TabsList>
+          <Tabs defaultValue="basic" className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="basic">Información Básica</TabsTrigger>
+              <TabsTrigger value="sprints" disabled={!startDate || !endDate}>
+                Configuración de Sprints
+              </TabsTrigger>
+            </TabsList>
 
-          <TabsContent value="basic" className="space-y-4">
-
-          <div className="space-y-2">
-            <Label htmlFor="name">Project Name *</Label>
-            <Input
-              id="name"
-              placeholder="Enter project name"
-              {...register('name')}
-              disabled={isLoading}
-            />
-            {errors.name && (
-              <p className="text-sm text-red-600">{errors.name.message}</p>
-            )}
-          </div>
-
-
-          <div className="space-y-2">
-            <Label>Project Methodology *</Label>
-            <Controller
-              name="methodology"
-              control={control}
-              render={({ field }) => (
-                <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isLoading}>
+            <TabsContent value="basic" className="space-y-4 mt-4">
+              {/* Space Selection - FIRST AND REQUIRED */}
+              <div className="space-y-2">
+                <Label htmlFor="space">Espacio *</Label>
+                <Select
+                  value={selectedSpaceId}
+                  onValueChange={(value) => setSelectedSpaceId(value)}
+                  disabled={isLoading || isLoadingSpaces || (spaceId !== undefined)}
+                  required
+                >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select project methodology" />
+                    <SelectValue placeholder={isLoadingSpaces ? "Cargando espacios..." : "Selecciona un espacio"} />
                   </SelectTrigger>
                   <SelectContent>
-                    {methodologies.map((methodology) => (
-                      <SelectItem key={methodology.value} value={methodology.value}>
-                        <div className="flex items-center gap-2">
-                          <methodology.icon className="h-4 w-4" />
-                          <div className="flex flex-col">
-                            <span className="font-medium">{methodology.label}</span>
-                            <span className="text-xs text-gray-500">{methodology.description}</span>
+                    {spaces.map(space => {
+                      const IconComponent = space.icon
+                        ? LucideIcons[space.icon as keyof typeof LucideIcons] || LucideIcons.Folder
+                        : LucideIcons.Folder
+                      return (
+                        <SelectItem key={space.id} value={space.id.toString()}>
+                          <div className="flex items-center gap-2">
+                            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                            {IconComponent && <IconComponent className="h-4 w-4" style={{ color: space.color }} />}
+                            <span>{space.name}</span>
                           </div>
-                        </div>
-                      </SelectItem>
-                    ))}
+                        </SelectItem>
+                      )
+                    })}
                   </SelectContent>
                 </Select>
-              )}
-            />
-            {errors.methodology && (
-              <p className="text-sm text-red-600">{errors.methodology.message}</p>
-            )}
-          </div>
-
-          {/* Conditional field based on project type */}
-          {selectedType && selectedType !== 'INTERNAL' && (
-            <div className="space-y-2">
-              <Label>
-                {selectedType === 'DEPARTMENT' ? 'Department/Area Name *' : 'Client Name *'}
-              </Label>
-              <Controller
-                name="targetEntity"
-                control={control}
-                render={({ field }) => (
-                  <Select
-                    onValueChange={(value) => {
-                      if (value === 'custom') {
-                        setShowCustomInput(true)
-                        field.onChange('')
-                      } else {
-                        setShowCustomInput(false)
-                        field.onChange(value)
-                      }
-                    }}
-                    defaultValue={field.value}
-                    disabled={isLoading}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder={
-                        selectedType === 'DEPARTMENT'
-                          ? "Select department or area"
-                          : "Select client"
-                      } />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {selectedType === 'DEPARTMENT' ? (
-                        <>
-                          {departments.map((department) => (
-                            <SelectItem key={department} value={department}>
-                              <div className="flex items-center gap-2">
-                                <Users className="h-4 w-4" />
-                                <span>{department}</span>
-                              </div>
-                            </SelectItem>
-                          ))}
-                          <SelectItem value="custom">
-                            <div className="flex items-center gap-2">
-                              <Plus className="h-4 w-4" />
-                              <span>Otro departamento...</span>
-                            </div>
-                          </SelectItem>
-                        </>
-                      ) : (
-                        <>
-                          {clients.map((client) => (
-                            <SelectItem key={client} value={client}>
-                              <div className="flex items-center gap-2">
-                                <Briefcase className="h-4 w-4" />
-                                <span>{client}</span>
-                              </div>
-                            </SelectItem>
-                          ))}
-                          <SelectItem value="custom">
-                            <div className="flex items-center gap-2">
-                              <Plus className="h-4 w-4" />
-                              <span>Otro cliente...</span>
-                            </div>
-                          </SelectItem>
-                        </>
-                      )}
-                    </SelectContent>
-                  </Select>
+                {spaceId !== undefined && (
+                  <p className="text-xs text-gray-500">El espacio está preseleccionado</p>
                 )}
-              />
-              {showCustomInput && (
+              </div>
+
+              {/* Project Name */}
+              <div className="space-y-2">
+                <Label htmlFor="name">Nombre del Proyecto *</Label>
                 <Input
-                  placeholder={
-                    selectedType === 'DEPARTMENT'
-                      ? "Escribir nombre del departamento"
-                      : "Escribir nombre del cliente"
-                  }
-                  {...register('targetEntity')}
+                  id="name"
+                  placeholder="Ej: Rediseño de la Plataforma Web"
+                  value={projectName}
+                  onChange={(e) => setProjectName(e.target.value)}
+                  disabled={isLoading}
+                  required
+                />
+              </div>
+
+              {/* Project Description */}
+              <div className="space-y-2">
+                <Label htmlFor="description">Descripción</Label>
+                <Textarea
+                  id="description"
+                  placeholder="Describe el proyecto (opcional)"
+                  rows={3}
+                  value={projectDescription}
+                  onChange={(e) => setProjectDescription(e.target.value)}
                   disabled={isLoading}
                 />
-              )}
-              {errors.targetEntity && (
-                <p className="text-sm text-red-600">{errors.targetEntity.message}</p>
-              )}
-            </div>
-          )}
+              </div>
 
-          {selectedType === 'INTERNAL' && (
-            <div className="space-y-2">
-              <Label htmlFor="internalUserId">Internal User (Optional)</Label>
-              <Input
-                id="internalUserId"
-                placeholder="Enter user ID or leave empty"
-                {...register('internalUserId')}
-                disabled={isLoading}
-              />
-              {errors.internalUserId && (
-                <p className="text-sm text-red-600">{errors.internalUserId.message}</p>
-              )}
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <Label htmlFor="description">Description</Label>
-            <Textarea
-              id="description"
-              placeholder="Describe your project (optional)"
-              rows={3}
-              {...register('description')}
-              disabled={isLoading}
-            />
-            {errors.description && (
-              <p className="text-sm text-red-600">{errors.description.message}</p>
-            )}
-          </div>
-          </TabsContent>
-
-          <TabsContent value="states" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Plantillas de Estados</CardTitle>
-                <DialogDescription>
-                  Selecciona el tipo de proyecto para aplicar una plantilla de estados predefinida
-                </DialogDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center space-x-4">
-                  <Label>Tipo de proyecto:</Label>
-                  <Select value={selectedProjectType} onValueChange={setSelectedProjectType}>
-                    <SelectTrigger className="w-[200px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {PROJECT_TYPES.map(type => (
-                        <SelectItem key={type} value={type}>
-                          {type}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    type="button"
-                    onClick={() => handleApplyTemplate(selectedProjectType)}
-                    variant="outline"
-                  >
-                    Aplicar Plantilla
-                  </Button>
-                </div>
-
-                <div className="text-sm text-gray-600">
-                  <strong>Vista previa:</strong> {DEFAULT_STATUSES[selectedProjectType]?.map(s => s.name).join(' → ')}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Estados del Proyecto</CardTitle>
-                <DialogDescription>
-                  Personaliza los estados que usará este proyecto
-                </DialogDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Current Statuses */}
+              {/* Project Dates */}
+              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  {customStatuses.map((status, index) => (
-                    <div key={status.id} className="flex items-center justify-between p-3 border rounded-lg">
-                      <div className="flex items-center space-x-3">
-                        <GripVertical className="h-4 w-4 text-gray-400" />
-                        <span className="font-medium">{index + 1}.</span>
-                        <Badge className={status.color}>
-                          {status.name}
-                        </Badge>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Select
-                          value={status.color}
-                          onValueChange={(value) => handleUpdateStatus(status.id, { color: value })}
-                        >
-                          <SelectTrigger className="w-[120px] h-8">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {statusColorOptions.map(option => (
-                              <SelectItem key={option.value} value={option.value}>
-                                <div className="flex items-center space-x-2">
-                                  <div className={`w-3 h-3 rounded-full ${option.color}`} />
-                                  <span>{option.label}</span>
-                                </div>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleRemoveStatus(status.id)}
-                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Add New Status */}
-                <div className="border-t pt-4">
-                  <div className="flex items-center space-x-2">
+                  <Label htmlFor="startDate">Fecha de Inicio</Label>
+                  <div className="relative">
+                    <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                     <Input
-                      placeholder="Nombre del nuevo estado"
-                      value={newStatusName}
-                      onChange={(e) => setNewStatusName(e.target.value)}
-                      className="flex-1"
+                      id="startDate"
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      disabled={isLoading}
+                      className="pl-10"
                     />
-                    <Select value={newStatusColor} onValueChange={setNewStatusColor}>
-                      <SelectTrigger className="w-[120px]">
-                        <Palette className="h-4 w-4" />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="endDate">Fecha de Fin</Label>
+                  <div className="relative">
+                    <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input
+                      id="endDate"
+                      type="date"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      disabled={isLoading}
+                      min={startDate}
+                      className="pl-10"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Template Selection */}
+              <div className="space-y-2">
+                <Label>Plantilla de Estados *</Label>
+                <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId} disabled={isLoading || isLoadingTemplates}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={isLoadingTemplates ? "Cargando plantillas..." : "Selecciona una plantilla"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {templates.map(template => {
+                      const IconComponent = LucideIcons[template.icon as keyof typeof LucideIcons] || LucideIcons.Folder
+                      return (
+                        <SelectItem key={template.id} value={template.id.toString()}>
+                          <div className="flex items-center gap-2 w-full">
+                            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                            {IconComponent && <IconComponent className="h-4 w-4 flex-shrink-0" style={{ color: template.color }} />}
+                            <div className="flex flex-col flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium">{template.name}</span>
+                                {template.isDefault ? (
+                                  <Badge variant="secondary" className="text-xs">Sistema</Badge>
+                                ) : (
+                                  <Badge variant="outline" className="text-xs">Mía</Badge>
+                                )}
+                              </div>
+                              <span className="text-xs text-gray-500">
+                                {getCategoryLabel(template.category)} • {template.states.length} estados
+                              </span>
+                            </div>
+                          </div>
+                        </SelectItem>
+                      )
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Template Preview */}
+              {selectedTemplate && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-sm">Vista Previa de Estados</CardTitle>
+                    <CardDescription className="text-xs">
+                      {selectedTemplate.description}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex flex-wrap gap-1">
+                      {selectedTemplate.states.map((state, idx) => (
+                        <Badge
+                          key={state.id}
+                          variant="outline"
+                          className="text-xs"
+                          style={{
+                            borderColor: state.color,
+                            color: state.color
+                          }}
+                        >
+                          {state.name}
+                        </Badge>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+
+            <TabsContent value="sprints" className="space-y-4 mt-4">
+              {/* Sprint Configuration */}
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="sprintDuration">Duración del Sprint (semanas)</Label>
+                    <Select value={sprintDuration} onValueChange={setSprintDuration}>
+                      <SelectTrigger>
+                        <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {statusColorOptions.map(option => (
-                          <SelectItem key={option.value} value={option.value}>
-                            <div className="flex items-center space-x-2">
-                              <div className={`w-3 h-3 rounded-full ${option.color}`} />
-                              <span>{option.label}</span>
-                            </div>
-                          </SelectItem>
-                        ))}
+                        <SelectItem value="1">1 semana</SelectItem>
+                        <SelectItem value="2">2 semanas</SelectItem>
+                        <SelectItem value="3">3 semanas</SelectItem>
+                        <SelectItem value="4">4 semanas</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div className="flex items-end">
                     <Button
                       type="button"
-                      onClick={handleAddStatus}
-                      disabled={!newStatusName.trim()}
-                      size="sm"
+                      onClick={generateSprints}
+                      disabled={!startDate || !endDate || !sprintDuration}
+                      className="w-full"
                     >
-                      <Plus className="h-4 w-4 mr-1" />
-                      Agregar
+                      <Plus className="h-4 w-4 mr-2" />
+                      Generar Sprints
                     </Button>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
+
+                {/* Sprints List */}
+                {sprints.length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">Sprints Configurados ({sprints.length})</CardTitle>
+                      <CardDescription className="text-xs">
+                        Ajusta las fechas de cada sprint si es necesario
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-3 max-h-[300px] overflow-y-auto">
+                        {sprints.map((sprint, index) => (
+                          <div key={sprint.id} className="flex items-center gap-3 p-3 border rounded-lg bg-gray-50">
+                            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+                              <span className="text-sm font-semibold text-blue-700">{index + 1}</span>
+                            </div>
+                            <div className="flex-1 grid grid-cols-2 gap-2">
+                              <div className="space-y-1">
+                                <Label className="text-xs text-gray-500">Inicio</Label>
+                                <Input
+                                  type="date"
+                                  value={sprint.startDate}
+                                  onChange={(e) => handleUpdateSprint(sprint.id, 'startDate', e.target.value)}
+                                  className="h-8 text-xs"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <Label className="text-xs text-gray-500">Fin</Label>
+                                <Input
+                                  type="date"
+                                  value={sprint.endDate}
+                                  onChange={(e) => handleUpdateSprint(sprint.id, 'endDate', e.target.value)}
+                                  className="h-8 text-xs"
+                                  min={sprint.startDate}
+                                />
+                              </div>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleRemoveSprint(sprint.id)}
+                              className="text-red-600 hover:text-red-700"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {sprints.length === 0 && (
+                  <div className="text-center py-8 text-gray-500 text-sm border rounded-lg bg-gray-50">
+                    Configura la duración y genera sprints automáticamente
+                  </div>
+                )}
+              </div>
+            </TabsContent>
           </Tabs>
 
-          <div className="flex justify-end space-x-2">
+          <div className="flex justify-end space-x-2 pt-4 border-t">
             <Button
               type="button"
               variant="outline"
               onClick={() => handleOpenChange(false)}
               disabled={isLoading}
             >
-              Cancel
+              Cancelar
             </Button>
-            <Button type="submit" disabled={isLoading}>
+            <Button type="submit" disabled={isLoading || !selectedSpaceId || !projectName.trim() || !selectedTemplateId}>
               {isLoading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Creating...
+                  Creando...
                 </>
               ) : (
-                'Create Project'
+                'Crear Proyecto'
               )}
             </Button>
           </div>

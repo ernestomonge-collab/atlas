@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { MentionTextarea } from '@/components/ui/mention-textarea'
 import {
   Select,
   SelectContent,
@@ -25,10 +26,10 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Checkbox } from '@/components/ui/checkbox'
 // Define local types to match mock data
-type TaskStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED'
 type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
-import { getMockSubtasksByTaskId } from '@/lib/mock-data'
 import { Comment, Attachment } from '@/types'
+import { AttachmentList } from '@/components/attachments/attachment-list'
+import { toast } from 'sonner'
 
 interface User {
   id: string;
@@ -40,10 +41,12 @@ import { Loader2, Edit3, MessageSquare, Clock, Send, User as UserIcon, Paperclip
 const editTaskSchema = z.object({
   title: z.string().min(1, 'Title is required').max(255, 'Title too long'),
   description: z.string().optional(),
-  status: z.enum(['PENDING', 'IN_PROGRESS', 'COMPLETED']),
+  status: z.string().min(1, 'Status is required'),
   priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']),
   dueDate: z.string().optional(),
   assigneeId: z.string().optional(),
+  sprintId: z.string().optional(),
+  epicId: z.string().optional(),
 })
 
 type EditTaskInput = z.infer<typeof editTaskSchema>
@@ -52,18 +55,29 @@ interface Subtask {
   id: string
   title: string
   description?: string
-  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED'
-  taskId: string
+  status: string
+  priority: TaskPriority
+  dueDate?: string
   order: number
   createdAt: string
   updatedAt: string
+  assignee?: {
+    id: string
+    name?: string
+    email: string
+  }
+  _count?: {
+    comments: number
+    attachments: number
+    subtasks: number
+  }
 }
 
 interface Task {
   id: string
   title: string
   description?: string
-  status: TaskStatus
+  status: string
   priority: TaskPriority
   dueDate?: string
   assigneeId?: string
@@ -72,12 +86,22 @@ interface Task {
   projectId: string
 }
 
+interface ProjectStatus {
+  id: string
+  name: string
+  color: string
+  order: number
+}
+
 interface EditTaskModalProps {
   task: Task | null
   projectId: string
   open: boolean
   onOpenChange: (open: boolean) => void
   onTaskUpdated: (task: Task) => void
+  statuses?: ProjectStatus[]
+  isSubtask?: boolean
+  onEditSubtask?: (subtask: Subtask) => void
 }
 
 interface User {
@@ -91,11 +115,17 @@ export function EditTaskModal({
   projectId,
   open,
   onOpenChange,
-  onTaskUpdated
+  onTaskUpdated,
+  statuses = [],
+  isSubtask = false,
+  onEditSubtask
 }: EditTaskModalProps) {
   const [isLoading, setIsLoading] = useState(false)
+  const [isLoadingData, setIsLoadingData] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [teamMembers, setTeamMembers] = useState<User[]>([])
+  const [sprints, setSprints] = useState<{ id: string; name: string; startDate: string; endDate: string }[]>([])
+  const [epics, setEpics] = useState<{ id: string; name: string; color?: string }[]>([])
   const [activeTab, setActiveTab] = useState('details')
   const [comments, setComments] = useState<Comment[]>([])
   const [newComment, setNewComment] = useState('')
@@ -104,6 +134,8 @@ export function EditTaskModal({
   const [isUploadingFile, setIsUploadingFile] = useState(false)
   const [subtasks, setSubtasks] = useState<Subtask[]>([])
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('')
+  const [attachmentCount, setAttachmentCount] = useState(0)
+  const [auditTrail, setAuditTrail] = useState<any[]>([])
 
   const {
     register,
@@ -120,6 +152,7 @@ export function EditTaskModal({
   const status = watch('status')
   const priority = watch('priority')
   const assigneeId = watch('assigneeId')
+  const sprintId = watch('sprintId')
 
   useEffect(() => {
     if (open && task) {
@@ -129,46 +162,124 @@ export function EditTaskModal({
       setValue('status', task.status)
       setValue('priority', task.priority)
       setValue('dueDate', task.dueDate ? task.dueDate.split('T')[0] : '')
-      setValue('assigneeId', task.assigneeId || undefined)
+      setValue('assigneeId', task.assigneeId ? String(task.assigneeId) : undefined)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      setValue('sprintId', (task as any).sprintId ? String((task as any).sprintId) : undefined)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      setValue('epicId', (task as any).epicId ? String((task as any).epicId) : undefined)
 
-      fetchTeamMembers()
-      fetchComments()
-      fetchAttachments()
-      fetchSubtasks()
+      // Load all data in parallel
+      loadAllData()
+    } else if (!open) {
+      // Clear state when modal closes to prevent showing stale data
+      setComments([])
+      setAttachments([])
+      setSubtasks([])
+      setAuditTrail([])
+      setAttachmentCount(0)
+      setNewComment('')
+      setNewSubtaskTitle('')
+      setActiveTab('details')
+      setError(null)
+      reset()
     }
-  }, [open, task, setValue])
+  }, [open, task, setValue, isSubtask, reset])
+
+  const loadAllData = async () => {
+    setIsLoadingData(true)
+    try {
+      // Only load essential data for the Details tab
+      await Promise.all([
+        fetchTeamMembers(),
+        fetchSprints(),
+        fetchEpics()
+      ])
+
+      // Load secondary data in background (non-blocking)
+      Promise.all([
+        fetchComments(),
+        fetchAttachments(),
+        fetchAuditLogs(),
+        !isSubtask ? fetchSubtasks() : Promise.resolve()
+      ]).catch(error => {
+        console.error('Error loading secondary data:', error)
+      })
+    } catch (error) {
+      console.error('Error loading task data:', error)
+    } finally {
+      setIsLoadingData(false)
+    }
+  }
 
   const fetchTeamMembers = async () => {
     try {
       const response = await fetch(`/api/projects/${projectId}/members`)
       if (response.ok) {
-        const members = await response.json()
-        setTeamMembers(members)
+        const projectMembers = await response.json()
+        // Extract user data from ProjectMember objects
+        const users = projectMembers.map((pm: any) => pm.user)
+        setTeamMembers(users)
       }
     } catch (error) {
       console.error('Failed to fetch project members:', error)
     }
   }
 
+  const fetchSprints = async () => {
+    try {
+      const response = await fetch(`/api/projects/${projectId}/sprints`)
+      if (response.ok) {
+        const sprintsData = await response.json()
+        // Show all sprints for editing (user can move tasks between sprints)
+        setSprints(sprintsData)
+      } else {
+        // Mock data as fallback
+        setSprints([
+          { id: 'sprint-1', name: 'Sprint 1', startDate: '2024-03-01', endDate: '2024-03-14' },
+          { id: 'sprint-2', name: 'Sprint 2', startDate: '2024-03-15', endDate: '2024-03-28' },
+          { id: 'sprint-3', name: 'Sprint 3', startDate: '2024-03-29', endDate: '2024-04-11' }
+        ])
+      }
+    } catch (error) {
+      console.error('Failed to fetch sprints:', error)
+      // Mock data as fallback
+      setSprints([
+        { id: 'sprint-1', name: 'Sprint 1', startDate: '2024-03-01', endDate: '2024-03-14' },
+        { id: 'sprint-2', name: 'Sprint 2', startDate: '2024-03-15', endDate: '2024-03-28' },
+        { id: 'sprint-3', name: 'Sprint 3', startDate: '2024-03-29', endDate: '2024-04-11' }
+      ])
+    }
+  }
+
+  const fetchEpics = async () => {
+    try {
+      const response = await fetch(`/api/projects/${projectId}/epics`)
+      if (response.ok) {
+        const epicsData = await response.json()
+        setEpics(epicsData)
+      }
+    } catch (error) {
+      console.error('Failed to fetch epics:', error)
+    }
+  }
+
   const fetchComments = async () => {
     try {
-      // Mock comments data for now
-      const mockComments = [
-        {
-          id: 1,
-          content: 'Esta tarea necesita revisión de los requisitos técnicos.',
-          author: { name: 'Juan Pérez', avatar: null },
-          createdAt: '2024-03-10T10:30:00Z'
-        },
-        {
-          id: 2,
-          content: 'He actualizado la descripción con más detalles sobre la implementación.',
-          author: { name: 'María García', avatar: null },
-          createdAt: '2024-03-10T14:15:00Z'
-        }
-      ]
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      setComments(mockComments as any)
+      if (!task?.id) return
+      const url = isSubtask
+        ? `/api/tasks/${(task as any).taskId}/subtasks/${task.id}/comments`
+        : `/api/tasks/${task.id}/comments`
+      console.log('[EditTaskModal] Fetching comments from:', url, 'isSubtask:', isSubtask)
+      const response = await fetch(url)
+      console.log('[EditTaskModal] Comments response status:', response.status)
+      if (response.ok) {
+        const data = await response.json()
+        console.log('[EditTaskModal] Comments data received:', data)
+        setComments(data)
+      } else {
+        const error = await response.json()
+        console.error('[EditTaskModal] Failed to fetch comments:', error)
+      }
     } catch (error) {
       console.error('Failed to fetch comments:', error)
     }
@@ -176,49 +287,33 @@ export function EditTaskModal({
 
   const fetchAttachments = async () => {
     try {
-      // Mock attachments data for now
-      const mockAttachments = [
-        {
-          id: 1,
-          name: 'requirements.pdf',
-          size: 2.5,
-          type: 'application/pdf',
-          uploadedBy: 'Juan Pérez',
-          uploadedAt: '2024-03-09T16:20:00Z',
-          url: '/mock/requirements.pdf'
-        },
-        {
-          id: 2,
-          name: 'design-mockups.png',
-          size: 1.8,
-          type: 'image/png',
-          uploadedBy: 'María García',
-          uploadedAt: '2024-03-10T09:45:00Z',
-          url: '/mock/design-mockups.png'
-        },
-        {
-          id: 3,
-          name: 'implementation-notes.docx',
-          size: 0.9,
-          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-          uploadedBy: 'Carlos López',
-          uploadedAt: '2024-03-10T11:30:00Z',
-          url: '/mock/implementation-notes.docx'
-        }
-      ]
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      setAttachments(mockAttachments as any)
+      if (!task?.id) return
+      const url = isSubtask
+        ? `/api/tasks/${(task as any).taskId}/subtasks/${task.id}/attachments`
+        : `/api/tasks/${task.id}/attachments`
+      const response = await fetch(url)
+      if (response.ok) {
+        const data = await response.json()
+        setAttachments(data)
+        setAttachmentCount(data.length)
+      }
     } catch (error) {
       console.error('Failed to fetch attachments:', error)
     }
   }
 
+  const handleAttachmentUpdate = () => {
+    fetchAttachments()
+  }
+
   const fetchSubtasks = async () => {
     try {
       if (!task?.id) return
-      const taskSubtasks = getMockSubtasksByTaskId(task.id)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      setSubtasks(taskSubtasks as any)
+      const response = await fetch(`/api/tasks/${task.id}/subtasks`)
+      if (response.ok) {
+        const data = await response.json()
+        setSubtasks(data)
+      }
     } catch (error) {
       console.error('Failed to fetch subtasks:', error)
     }
@@ -228,146 +323,119 @@ export function EditTaskModal({
     if (!newSubtaskTitle.trim() || !task?.id) return
 
     try {
-      // Mock API call
-      await new Promise(resolve => setTimeout(resolve, 300))
+      const response = await fetch(`/api/tasks/${task.id}/subtasks`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          title: newSubtaskTitle.trim(),
+          // Status will be set by the API to the first template state
+        }),
+      })
 
-      const newSubtask: Subtask = {
-        id: `subtask-${Date.now()}`,
-        title: newSubtaskTitle.trim(),
-        status: 'PENDING',
-        taskId: task.id,
-        order: subtasks.length,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+      if (!response.ok) {
+        throw new Error('Failed to add subtask')
       }
 
+      const newSubtask = await response.json()
+      toast.success('Subtarea agregada')
       setSubtasks([...subtasks, newSubtask])
       setNewSubtaskTitle('')
     } catch (error) {
       console.error('Failed to add subtask:', error)
+      toast.error('Error al agregar subtarea')
     }
   }
 
   const handleToggleSubtask = async (subtaskId: string) => {
-    try {
-      // Mock API call
-      await new Promise(resolve => setTimeout(resolve, 300))
+    if (!task?.id) return
 
-      setSubtasks(subtasks.map(subtask =>
-        subtask.id === subtaskId
-          ? {
-              ...subtask,
-              status: subtask.status === 'COMPLETED' ? 'PENDING' : 'COMPLETED',
-              updatedAt: new Date().toISOString()
-            }
-          : subtask
+    try {
+      const subtask = subtasks.find(s => s.id === parseInt(subtaskId))
+      if (!subtask) return
+
+      const newStatus = subtask.status === 'COMPLETED' ? 'PENDING' : 'COMPLETED'
+
+      const response = await fetch(`/api/tasks/${task.id}/subtasks/${subtaskId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          status: newStatus,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to toggle subtask')
+      }
+
+      const updatedSubtask = await response.json()
+      setSubtasks(subtasks.map(s =>
+        s.id === parseInt(subtaskId) ? updatedSubtask : s
       ))
     } catch (error) {
       console.error('Failed to toggle subtask:', error)
+      toast.error('Error al actualizar subtarea')
     }
   }
 
   const handleDeleteSubtask = async (subtaskId: string) => {
-    try {
-      // Mock API call
-      await new Promise(resolve => setTimeout(resolve, 300))
+    if (!task?.id) return
 
-      setSubtasks(subtasks.filter(subtask => subtask.id !== subtaskId))
+    try {
+      const response = await fetch(`/api/tasks/${task.id}/subtasks/${subtaskId}`, {
+        method: 'DELETE',
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to delete subtask')
+      }
+
+      toast.success('Subtarea eliminada')
+      setSubtasks(subtasks.filter(subtask => subtask.id !== parseInt(subtaskId)))
     } catch (error) {
       console.error('Failed to delete subtask:', error)
+      toast.error('Error al eliminar subtarea')
     }
   }
 
   const handleAddComment = async () => {
-    if (!newComment.trim()) return
+    if (!newComment.trim() || !task?.id) return
 
     setIsSubmittingComment(true)
     try {
-      // Mock API call
-      await new Promise(resolve => setTimeout(resolve, 500))
+      const url = isSubtask
+        ? `/api/tasks/${(task as any).taskId}/subtasks/${task.id}/comments`
+        : `/api/tasks/${task.id}/comments`
 
-      const comment = {
-        id: comments.length + 1,
-        content: newComment.trim(),
-        author: { name: 'Usuario Actual', avatar: null },
-        createdAt: new Date().toISOString()
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          content: newComment.trim(),
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to add comment')
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      setComments([...comments, comment as any])
+      const newCommentData = await response.json()
+      toast.success('Comentario agregado')
+      setComments([...comments, newCommentData])
       setNewComment('')
     } catch (error) {
       console.error('Failed to add comment:', error)
+      toast.error('Error al agregar comentario')
     } finally {
       setIsSubmittingComment(false)
     }
   }
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files
-    if (!files || files.length === 0) return
-
-    setIsUploadingFile(true)
-    try {
-      // Mock file upload
-      await new Promise(resolve => setTimeout(resolve, 1500))
-
-      const newAttachments = Array.from(files).map((file, index) => ({
-        id: attachments.length + index + 1,
-        name: file.name,
-        size: file.size / (1024 * 1024), // Convert to MB
-        type: file.type,
-        uploadedBy: 'Usuario Actual',
-        uploadedAt: new Date().toISOString(),
-        url: `/mock/${file.name}`
-      }))
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      setAttachments([...attachments, ...newAttachments as any])
-    } catch (error) {
-      console.error('Failed to upload file:', error)
-    } finally {
-      setIsUploadingFile(false)
-      // Reset file input
-      if (event.target) {
-        event.target.value = ''
-      }
-    }
-  }
-
-  const handleDeleteAttachment = async (attachmentId: number) => {
-    try {
-      // Mock API call
-      await new Promise(resolve => setTimeout(resolve, 300))
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      setAttachments(attachments.filter(att => (att.id as any) !== (attachmentId as any)))
-    } catch (error) {
-      console.error('Failed to delete attachment:', error)
-    }
-  }
-
-  const formatFileSize = (sizeInMB: number) => {
-    if (sizeInMB < 1) {
-      return `${Math.round(sizeInMB * 1024)} KB`
-    }
-    return `${sizeInMB.toFixed(1)} MB`
-  }
-
-  const getFileIcon = (fileType: string) => {
-    if (fileType.startsWith('image/')) {
-      return '🖼️'
-    } else if (fileType.includes('pdf')) {
-      return '📄'
-    } else if (fileType.includes('document') || fileType.includes('word')) {
-      return '📝'
-    } else if (fileType.includes('spreadsheet') || fileType.includes('excel')) {
-      return '📊'
-    } else if (fileType.includes('presentation') || fileType.includes('powerpoint')) {
-      return '📋'
-    }
-    return '📎'
-  }
 
   const onSubmit = async (data: EditTaskInput) => {
     if (!task) return
@@ -376,10 +444,24 @@ export function EditTaskModal({
     setError(null)
 
     try {
-      const response = await fetch(`/api/projects/${projectId}/tasks/${task.id}`, {
+      // Si es una subtarea, usar el endpoint de subtareas
+      const url = isSubtask
+        ? `/api/tasks/${(task as any).taskId}/subtasks/${task.id}`
+        : `/api/tasks/${task.id}`
+
+      // Fix timezone issue: if dueDate is provided, set it to noon local time
+      const requestData = { ...data }
+      if (requestData.dueDate) {
+        // Convert "YYYY-MM-DD" to ISO string with noon local time
+        const [year, month, day] = requestData.dueDate.split('-').map(Number)
+        const localDate = new Date(year, month - 1, day, 12, 0, 0, 0)
+        requestData.dueDate = localDate.toISOString()
+      }
+
+      const response = await fetch(url, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify(requestData),
       })
 
       if (!response.ok) {
@@ -388,10 +470,20 @@ export function EditTaskModal({
       }
 
       const updatedTask = await response.json()
+
+      // If this is a subtask, add the isSubtask flag and parent taskId
+      if (isSubtask) {
+        updatedTask.isSubtask = true
+        updatedTask.taskId = (task as any).taskId
+      }
+
+      toast.success('Tarea actualizada exitosamente')
       onTaskUpdated(updatedTask)
       onOpenChange(false)
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'An error occurred')
+      const errorMessage = error instanceof Error ? error.message : 'An error occurred'
+      setError(errorMessage)
+      toast.error(errorMessage)
     } finally {
       setIsLoading(false)
     }
@@ -406,7 +498,12 @@ export function EditTaskModal({
     onOpenChange(newOpen)
   }
 
-  const getStatusLabel = (status: TaskStatus) => {
+  const getStatusLabel = (status: string) => {
+    // Try to find in custom statuses first
+    const customStatus = statuses.find(s => s.id === status)
+    if (customStatus) return customStatus.name
+
+    // Fallback to default labels
     switch (status) {
       case 'PENDING': return 'Pendiente'
       case 'IN_PROGRESS': return 'En Progreso'
@@ -435,65 +532,152 @@ export function EditTaskModal({
     })
   }
 
-  // Mock trazabilidad data
-  const auditTrail = [
-    {
-      id: 1,
-      action: 'Tarea creada',
-      user: 'Juan Pérez',
-      timestamp: '2024-03-08T09:15:00Z',
-      details: 'Tarea creada con prioridad Media'
-    },
-    {
-      id: 2,
-      action: 'Estado cambiado',
-      user: 'María García',
-      timestamp: '2024-03-09T11:30:00Z',
-      details: 'Estado cambiado de Pendiente a En Progreso'
-    },
-    {
-      id: 3,
-      action: 'Prioridad actualizada',
-      user: 'Carlos López',
-      timestamp: '2024-03-10T08:45:00Z',
-      details: 'Prioridad cambiada de Media a Alta'
+  const fetchAuditLogs = async () => {
+    try {
+      if (!task?.id) return
+      const url = isSubtask
+        ? `/api/tasks/${(task as any).taskId}/subtasks/${task.id}/audit-logs`
+        : `/api/tasks/${task.id}/audit-logs`
+      const response = await fetch(url)
+      if (response.ok) {
+        const data = await response.json()
+        setAuditTrail(data)
+      }
+    } catch (error) {
+      console.error('Failed to fetch audit logs:', error)
     }
-  ]
+  }
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[700px] max-h-[80vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[900px] max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <div className="flex items-center gap-2">
             <Edit3 className="h-5 w-5 text-blue-600" />
-            <DialogTitle>Editar Tarea</DialogTitle>
+            <DialogTitle>
+              {isSubtask ? 'Editar Subtarea' : 'Editar Tarea'}
+              {task && (
+                <span className="text-gray-600 font-normal"> - {task.title}</span>
+              )}
+            </DialogTitle>
           </div>
           <DialogDescription>
-            Modifica los detalles de la tarea, agrega comentarios o revisa su trazabilidad.
+            Modifica los detalles de la {isSubtask ? 'subtarea' : 'tarea'}, agrega comentarios o revisa su trazabilidad.
           </DialogDescription>
         </DialogHeader>
 
-        {task && (
+        {isLoadingData ? (
+          <div className="flex flex-col items-center justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-blue-600 mb-3" />
+            <p className="text-gray-500">Cargando datos de la tarea...</p>
+          </div>
+        ) : task && (
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-5">
-              <TabsTrigger value="details">Detalles</TabsTrigger>
-              <TabsTrigger value="subtasks" className="flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4" />
-                Subtareas ({subtasks.length})
-              </TabsTrigger>
-              <TabsTrigger value="comments" className="flex items-center gap-2">
-                <MessageSquare className="h-4 w-4" />
-                Comentarios ({comments.length})
-              </TabsTrigger>
-              <TabsTrigger value="attachments" className="flex items-center gap-2">
-                <Paperclip className="h-4 w-4" />
-                Archivos ({attachments.length})
-              </TabsTrigger>
-              <TabsTrigger value="history" className="flex items-center gap-2">
-                <Clock className="h-4 w-4" />
-                Trazabilidad
-              </TabsTrigger>
-            </TabsList>
+            {isSubtask ? (
+              <TabsList className="grid w-full grid-cols-4 h-auto p-1 bg-gray-100">
+                <TabsTrigger
+                  value="details"
+                  className="flex items-center gap-2 data-[state=active]:bg-blue-500 data-[state=active]:text-white transition-all py-2.5"
+                >
+                  <Edit3 className="h-4 w-4" />
+                  <span className="font-medium">Detalles</span>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="comments"
+                  className="flex items-center gap-2 data-[state=active]:bg-green-500 data-[state=active]:text-white transition-all py-2.5"
+                >
+                  <MessageSquare className="h-4 w-4" />
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-medium">Comentarios</span>
+                    {comments.length > 0 && (
+                      <span className="bg-white/20 px-1.5 py-0.5 rounded-full text-xs font-semibold">
+                        {comments.length}
+                      </span>
+                    )}
+                  </div>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="attachments"
+                  className="flex items-center gap-2 data-[state=active]:bg-orange-500 data-[state=active]:text-white transition-all py-2.5"
+                >
+                  <Paperclip className="h-4 w-4" />
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-medium">Archivos</span>
+                    {attachmentCount > 0 && (
+                      <span className="bg-white/20 px-1.5 py-0.5 rounded-full text-xs font-semibold">
+                        {attachmentCount}
+                      </span>
+                    )}
+                  </div>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="history"
+                  className="flex items-center gap-2 data-[state=active]:bg-purple-500 data-[state=active]:text-white transition-all py-2.5"
+                >
+                  <Clock className="h-4 w-4" />
+                  <span className="font-medium">Trazabilidad</span>
+                </TabsTrigger>
+              </TabsList>
+            ) : (
+              <TabsList className="grid w-full grid-cols-5 h-auto p-1 bg-gray-100">
+                <TabsTrigger
+                  value="details"
+                  className="flex items-center gap-2 data-[state=active]:bg-blue-500 data-[state=active]:text-white transition-all py-2.5"
+                >
+                  <Edit3 className="h-4 w-4" />
+                  <span className="font-medium">Detalles</span>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="subtasks"
+                  className="flex items-center gap-2 data-[state=active]:bg-indigo-500 data-[state=active]:text-white transition-all py-2.5"
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-medium">Subtareas</span>
+                    {subtasks.length > 0 && (
+                      <span className="bg-white/20 px-1.5 py-0.5 rounded-full text-xs font-semibold">
+                        {subtasks.filter(s => s.status === 'COMPLETED').length}/{subtasks.length}
+                      </span>
+                    )}
+                  </div>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="comments"
+                  className="flex items-center gap-2 data-[state=active]:bg-green-500 data-[state=active]:text-white transition-all py-2.5"
+                >
+                  <MessageSquare className="h-4 w-4" />
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-medium">Comentarios</span>
+                    {comments.length > 0 && (
+                      <span className="bg-white/20 px-1.5 py-0.5 rounded-full text-xs font-semibold">
+                        {comments.length}
+                      </span>
+                    )}
+                  </div>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="attachments"
+                  className="flex items-center gap-2 data-[state=active]:bg-orange-500 data-[state=active]:text-white transition-all py-2.5"
+                >
+                  <Paperclip className="h-4 w-4" />
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-medium">Archivos</span>
+                    {attachmentCount > 0 && (
+                      <span className="bg-white/20 px-1.5 py-0.5 rounded-full text-xs font-semibold">
+                        {attachmentCount}
+                      </span>
+                    )}
+                  </div>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="history"
+                  className="flex items-center gap-2 data-[state=active]:bg-purple-500 data-[state=active]:text-white transition-all py-2.5"
+                >
+                  <Clock className="h-4 w-4" />
+                  <span className="font-medium">Trazabilidad</span>
+                </TabsTrigger>
+              </TabsList>
+            )}
 
             {/* Tab Content: Detalles */}
             <TabsContent value="details" className="space-y-4">
@@ -539,17 +723,27 @@ export function EditTaskModal({
                       control={control}
                       render={({ field }) => (
                         <Select
+                          value={field.value}
                           onValueChange={field.onChange}
-                          defaultValue={field.value}
                           disabled={isLoading}
                         >
                           <SelectTrigger>
                             <SelectValue placeholder="Seleccionar estado" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="PENDING">Pendiente</SelectItem>
-                            <SelectItem value="IN_PROGRESS">En Progreso</SelectItem>
-                            <SelectItem value="COMPLETED">Completada</SelectItem>
+                            {statuses.length > 0 ? (
+                              statuses.map((status) => (
+                                <SelectItem key={status.id} value={status.id}>
+                                  {status.name}
+                                </SelectItem>
+                              ))
+                            ) : (
+                              <>
+                                <SelectItem value="PENDING">Pendiente</SelectItem>
+                                <SelectItem value="IN_PROGRESS">En Progreso</SelectItem>
+                                <SelectItem value="COMPLETED">Completada</SelectItem>
+                              </>
+                            )}
                           </SelectContent>
                         </Select>
                       )}
@@ -563,8 +757,8 @@ export function EditTaskModal({
                       control={control}
                       render={({ field }) => (
                         <Select
+                          value={field.value}
                           onValueChange={field.onChange}
-                          defaultValue={field.value}
                           disabled={isLoading}
                         >
                           <SelectTrigger>
@@ -590,6 +784,7 @@ export function EditTaskModal({
                       type="date"
                       {...register('dueDate')}
                       disabled={isLoading}
+                      className="max-w-[200px]"
                     />
                   </div>
 
@@ -610,8 +805,72 @@ export function EditTaskModal({
                           <SelectContent>
                             <SelectItem value="unassigned">Sin asignar</SelectItem>
                             {teamMembers.map((member) => (
-                              <SelectItem key={member.id} value={member.id}>
+                              <SelectItem key={member.id} value={String(member.id)}>
                                 {member.name || member.email}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="sprint">Sprint</Label>
+                    <Controller
+                      name="sprintId"
+                      control={control}
+                      render={({ field }) => (
+                        <Select
+                          value={field.value || 'no-sprint'}
+                          onValueChange={(value) => field.onChange(value === 'no-sprint' ? undefined : value)}
+                          disabled={isLoading}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Seleccionar sprint" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="no-sprint">Sin sprint</SelectItem>
+                            {sprints.map((sprint) => (
+                              <SelectItem key={sprint.id} value={String(sprint.id)}>
+                                {sprint.name} ({new Date(sprint.startDate).toLocaleDateString('es-ES')} - {new Date(sprint.endDate).toLocaleDateString('es-ES')})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="epic">Épica</Label>
+                    <Controller
+                      name="epicId"
+                      control={control}
+                      render={({ field }) => (
+                        <Select
+                          value={field.value || 'no-epic'}
+                          onValueChange={(value) => field.onChange(value === 'no-epic' ? undefined : value)}
+                          disabled={isLoading}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Seleccionar épica" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="no-epic">Sin épica</SelectItem>
+                            {epics.map((epic) => (
+                              <SelectItem key={epic.id} value={String(epic.id)}>
+                                <div className="flex items-center gap-2">
+                                  {epic.color && (
+                                    <div
+                                      className="w-3 h-3 rounded-full"
+                                      style={{ backgroundColor: epic.color }}
+                                    />
+                                  )}
+                                  <span>{epic.name}</span>
+                                </div>
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -676,70 +935,84 @@ export function EditTaskModal({
                       <p className="text-sm">Divide esta tarea en partes más pequeñas</p>
                     </div>
                   ) : (
-                    subtasks.map((subtask) => (
-                      <div key={subtask.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg group">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleSubtask(subtask.id)}
-                          className="flex-shrink-0"
-                        >
-                          {subtask.status === 'COMPLETED' ? (
-                            <CheckCircle2 className="h-5 w-5 text-green-600" />
-                          ) : (
-                            <Circle className="h-5 w-5 text-gray-400 hover:text-gray-600" />
-                          )}
-                        </button>
+                    subtasks.map((subtask) => {
+                      // Find the status configuration for this subtask
+                      const statusConfig = statuses.find(s => s.id === subtask.status)
 
-                        <div className="flex-1 min-w-0">
-                          <p className={`text-sm ${
-                            subtask.status === 'COMPLETED'
-                              ? 'line-through text-gray-500'
-                              : 'text-gray-900'
-                          }`}>
-                            {subtask.title}
-                          </p>
+                      // Check if this is the last status (highest order) in the template
+                      const maxOrder = Math.max(...statuses.map(s => s.order))
+                      const isCompleted = statusConfig?.order === maxOrder
+
+                      return (
+                        <div key={subtask.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <p className={`text-sm font-medium ${
+                                isCompleted
+                                  ? 'line-through text-gray-500'
+                                  : 'text-gray-900'
+                              }`}>
+                                {subtask.title}
+                              </p>
+                              <span
+                                className="text-xs px-2 py-0.5 rounded-full whitespace-nowrap"
+                                style={{
+                                  backgroundColor: statusConfig?.color ? `${statusConfig.color}20` : '#f3f4f6',
+                                  color: statusConfig?.color || '#6b7280',
+                                  border: `1px solid ${statusConfig?.color || '#d1d5db'}`
+                                }}
+                              >
+                                {statusConfig?.name || subtask.status}
+                              </span>
+                            </div>
                           {subtask.description && (
                             <p className="text-xs text-gray-500 mt-1">
                               {subtask.description}
                             </p>
                           )}
+                          {subtask.assignee && (
+                            <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+                              <UserIcon className="h-3 w-3" />
+                              {subtask.assignee.name || subtask.assignee.email}
+                            </p>
+                          )}
                         </div>
-
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDeleteSubtask(subtask.id)}
-                          className="opacity-0 group-hover:opacity-100 text-red-600 hover:text-red-700 hover:bg-red-50"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
                       </div>
-                    ))
+                      )
+                    })
                   )}
                 </div>
 
                 {/* Progress indicator */}
-                {subtasks.length > 0 && (
-                  <div className="pt-2 border-t">
-                    <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
-                      <span>Progreso</span>
-                      <span>
-                        {subtasks.filter(s => s.status === 'COMPLETED').length} de {subtasks.length} completadas
-                      </span>
+                {subtasks.length > 0 && (() => {
+                  // Calculate completed subtasks (those in the last status)
+                  const maxOrder = Math.max(...statuses.map(s => s.order))
+                  const completedCount = subtasks.filter(subtask => {
+                    const statusConfig = statuses.find(s => s.id === subtask.status)
+                    return statusConfig?.order === maxOrder
+                  }).length
+
+                  return (
+                    <div className="pt-2 border-t">
+                      <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
+                        <span>Progreso</span>
+                        <span>
+                          {completedCount} de {subtasks.length} completadas
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className="bg-green-600 h-2 rounded-full transition-all duration-300"
+                          style={{
+                            width: `${subtasks.length > 0
+                              ? (completedCount / subtasks.length) * 100
+                              : 0}%`
+                          }}
+                        />
+                      </div>
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div
-                        className="bg-green-600 h-2 rounded-full transition-all duration-300"
-                        style={{
-                          width: `${subtasks.length > 0
-                            ? (subtasks.filter(s => s.status === 'COMPLETED').length / subtasks.length) * 100
-                            : 0}%`
-                        }}
-                      />
-                    </div>
-                  </div>
-                )}
+                  )
+                })()}
               </div>
             </TabsContent>
 
@@ -761,10 +1034,10 @@ export function EditTaskModal({
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                          <span className="font-medium text-sm">{(comment as any).author.name}</span>
+                          <span className="font-medium text-sm">{(comment as any).author?.name || 'Usuario'}</span>
                           <span className="text-xs text-gray-500">
                             {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                            {formatDate((comment as any).createdAt)}
+                            {(comment as any).createdAt && formatDate((comment as any).createdAt)}
                           </span>
                         </div>
                         <p className="text-sm text-gray-700">{comment.content}</p>
@@ -776,15 +1049,14 @@ export function EditTaskModal({
 
               <div className="space-y-3 border-t pt-4">
                 <Label>Agregar comentario</Label>
-                <div className="flex gap-2">
-                  <Textarea
-                    placeholder="Escribe tu comentario..."
-                    value={newComment}
-                    onChange={(e) => setNewComment(e.target.value)}
-                    rows={3}
-                    className="flex-1"
-                  />
-                </div>
+                <MentionTextarea
+                  placeholder="Escribe tu comentario... (Usa @ para mencionar usuarios)"
+                  value={newComment}
+                  onChange={(e) => setNewComment(e.target.value)}
+                  rows={3}
+                  className="w-full resize-none"
+                  projectId={projectId}
+                />
                 <div className="flex justify-end">
                   <Button
                     onClick={handleAddComment}
@@ -807,122 +1079,30 @@ export function EditTaskModal({
             {/* Tab Content: Archivos */}
             <TabsContent value="attachments" className="space-y-4">
               <div className="space-y-4">
-                {/* Upload Section */}
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6">
-                  <div className="text-center">
-                    <Upload className="h-12 w-12 mx-auto mb-4 text-gray-400" />
-                    <div className="space-y-2">
-                      <p className="text-lg font-medium">Subir archivos</p>
-                      <p className="text-sm text-gray-500">
-                        Arrastra archivos aquí o haz clic para seleccionar
-                      </p>
-                    </div>
-                    <div className="mt-4">
-                      <label htmlFor="file-upload" className="cursor-pointer">
-                        <Button type="button" disabled={isUploadingFile} asChild>
-                          <span>
-                            {isUploadingFile ? (
-                              <>
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                Subiendo...
-                              </>
-                            ) : (
-                              <>
-                                <Upload className="mr-2 h-4 w-4" />
-                                Seleccionar archivos
-                              </>
-                            )}
-                          </span>
-                        </Button>
-                      </label>
-                      <input
-                        id="file-upload"
-                        type="file"
-                        multiple
-                        className="hidden"
-                        onChange={handleFileUpload}
-                        disabled={isUploadingFile}
-                      />
-                    </div>
-                    <p className="text-xs text-gray-400 mt-2">
-                      Máximo 10MB por archivo. Formatos soportados: PDF, DOC, XLS, PPT, imágenes
-                    </p>
-                  </div>
+                <div className="flex justify-between items-center">
+                  <h4 className="font-medium text-sm text-gray-700">
+                    Archivos Adjuntos
+                  </h4>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => {
+                      const fileInput = document.getElementById(`file-upload-${task?.id}`) as HTMLInputElement
+                      fileInput?.click()
+                    }}
+                  >
+                    <Upload className="mr-2 h-4 w-4" />
+                    Adjuntar Archivo
+                  </Button>
                 </div>
 
-                {/* Attachments List */}
-                <div className="space-y-3">
-                  {attachments.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
-                      <Paperclip className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-                      <p>No hay archivos adjuntos</p>
-                      <p className="text-sm">Los archivos que subas aparecerán aquí</p>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-medium text-sm text-gray-700">
-                          Archivos adjuntos ({attachments.length})
-                        </h4>
-                      </div>
-                      <div className="space-y-2">
-                        {attachments.map((attachment) => (
-                          <div
-                            key={attachment.id}
-                            className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-                          >
-                            <div className="flex items-center gap-3 flex-1 min-w-0">
-                              <div className="text-2xl">
-                                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                                {getFileIcon((attachment as any).type)}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="font-medium text-sm truncate">
-                                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                                  {(attachment as any).name}
-                                </p>
-                                <div className="flex items-center gap-2 text-xs text-gray-500">
-                                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                                  <span>{formatFileSize((attachment as any).size)}</span>
-                                  <span>•</span>
-                                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                                  <span>por {(attachment as any).uploadedBy}</span>
-                                  <span>•</span>
-                                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                                  <span>{formatDate((attachment as any).uploadedAt)}</span>
-                                </div>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="h-8 w-8 p-0"
-                                title="Descargar archivo"
-                              >
-                                <Download className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
-                                onClick={() => {
-                                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                  handleDeleteAttachment((attachment as any).id)
-                                }}
-                                title="Eliminar archivo"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </div>
+                {task && (
+                  <AttachmentList
+                    taskId={parseInt(task.id)}
+                    initialAttachments={attachments}
+                    onAttachmentsChange={handleAttachmentUpdate}
+                  />
+                )}
               </div>
             </TabsContent>
 
@@ -947,12 +1127,17 @@ export function EditTaskModal({
                         <div className="flex items-center gap-2 mb-1">
                           <span className="font-medium text-sm">{entry.action}</span>
                           <span className="text-xs text-gray-500">
-                            por {entry.user}
+                            por {entry.user?.name || entry.user?.email || 'Usuario'}
                           </span>
                         </div>
-                        <p className="text-sm text-gray-600 mb-1">{entry.details}</p>
+                        {entry.details && <p className="text-sm text-gray-600 mb-1">{entry.details}</p>}
+                        {entry.field && entry.oldValue && entry.newValue && (
+                          <p className="text-sm text-gray-600 mb-1">
+                            {entry.field}: {entry.oldValue} → {entry.newValue}
+                          </p>
+                        )}
                         <span className="text-xs text-gray-400">
-                          {formatDate(entry.timestamp)}
+                          {formatDate(entry.createdAt)}
                         </span>
                       </div>
                     </div>
@@ -961,6 +1146,11 @@ export function EditTaskModal({
               </div>
             </TabsContent>
           </Tabs>
+        )}
+        {!isLoadingData && !task && (
+          <div className="text-center py-8 text-gray-500">
+            No se pudo cargar la tarea
+          </div>
         )}
       </DialogContent>
     </Dialog>

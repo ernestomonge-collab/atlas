@@ -30,14 +30,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { Space } from '@/types'
 import * as LucideIcons from 'lucide-react'
+import { toast } from 'sonner'
+import { useConfirm } from '@/hooks/use-confirm'
+import { AlertTriangle } from 'lucide-react'
 
 const editSpaceSchema = z.object({
   name: z.string().min(1, 'El nombre es requerido').max(100, 'El nombre es muy largo'),
   description: z.string().max(500, 'La descripción es muy larga').optional(),
   icon: z.string().min(1, 'Selecciona un ícono'),
   color: z.string().min(1, 'Selecciona un color'),
+  isPublic: z.boolean(),
 })
 
 type EditSpaceFormData = z.infer<typeof editSpaceSchema>
@@ -73,6 +78,7 @@ const colorOptions = [
 
 export function EditSpaceModal({ space, open, onOpenChange, onSpaceUpdated }: EditSpaceModalProps) {
   const [isLoading, setIsLoading] = useState(false)
+  const { confirm, ConfirmationDialog } = useConfirm()
 
   const form = useForm<EditSpaceFormData>({
     resolver: zodResolver(editSpaceSchema),
@@ -81,25 +87,56 @@ export function EditSpaceModal({ space, open, onOpenChange, onSpaceUpdated }: Ed
       description: space.description || '',
       icon: space.icon,
       color: space.color,
+      isPublic: space.isPublic ?? true,
     },
   })
 
   const onSubmit = async (data: EditSpaceFormData) => {
+    // Check if converting from private to public
+    if (!space.isPublic && data.isPublic) {
+      const confirmed = await confirm({
+        title: 'Convertir espacio a público',
+        description: '⚠️ Al convertir este espacio a público, todos los miembros actuales (excepto el propietario) serán removidos automáticamente. El espacio será visible para toda la organización. ¿Deseas continuar?',
+        confirmText: 'Sí, convertir a público',
+        cancelText: 'Cancelar',
+        variant: 'default'
+      })
+
+      if (!confirmed) {
+        return
+      }
+    }
+
     setIsLoading(true)
     try {
-      // TODO: Implement API call to update space
-      console.log('Updating space:', { ...space, ...data })
+      // Call API to update space
+      const response = await fetch(`/api/spaces/${space.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: data.name,
+          description: data.description || null,
+          icon: data.icon,
+          color: data.color,
+          isPublic: data.isPublic,
+        }),
+      })
 
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to update space')
+      }
 
-      // Mock updated space
-      const updatedSpace = { ...space, ...data }
+      const updatedSpace = await response.json()
+      toast.success('Espacio actualizado exitosamente')
       onSpaceUpdated?.(updatedSpace)
       onOpenChange(false)
       form.reset()
     } catch (error) {
       console.error('Error updating space:', error)
+      toast.error(error instanceof Error ? error.message : 'Error al actualizar el espacio')
     } finally {
       setIsLoading(false)
     }
@@ -171,6 +208,40 @@ export function EditSpaceModal({ space, open, onOpenChange, onSpaceUpdated }: Ed
                       />
                     </FormControl>
                     <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="isPublic"
+                render={({ field }) => (
+                  <FormItem>
+                    <div className="flex items-center justify-between space-y-0 rounded-lg border p-4">
+                      <div className="space-y-0.5">
+                        <FormLabel className="text-base">Espacio Público</FormLabel>
+                        <div className="text-sm text-gray-500">
+                          {field.value
+                            ? 'Visible para todos los miembros de la organización'
+                            : 'Solo visible para miembros específicos del espacio'
+                          }
+                        </div>
+                      </div>
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
+                    </div>
+                    {!space.isPublic && field.value && (
+                      <div className="flex items-start gap-2 mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                        <AlertTriangle className="h-4 w-4 text-yellow-600 mt-0.5 flex-shrink-0" />
+                        <p className="text-sm text-yellow-800">
+                          Al convertir a público, los miembros actuales (excepto el propietario) serán removidos.
+                        </p>
+                      </div>
+                    )}
                   </FormItem>
                 )}
               />
@@ -257,6 +328,7 @@ export function EditSpaceModal({ space, open, onOpenChange, onSpaceUpdated }: Ed
           </form>
         </Form>
       </DialogContent>
+      <ConfirmationDialog />
     </Dialog>
   )
 }

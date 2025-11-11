@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { UserRole, InvitationStatus } from '@prisma/client'
-import { MOCK_INVITATIONS, MOCK_USER } from '@/lib/mock-data'
 
 export interface Invitation {
   id: string
@@ -35,22 +34,13 @@ export function useInvitations() {
 
   const fetchInvitations = useCallback(async () => {
     try {
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 700))
+      const response = await fetch('/api/invitations')
 
-      // Use mock data with added properties
-      const data = MOCK_INVITATIONS.map(invitation => ({
-        ...invitation,
-        invitedById: MOCK_USER.id,
-        invitedBy: {
-          id: MOCK_USER.id,
-          name: MOCK_USER.name,
-          email: MOCK_USER.email
-        },
-        updatedAt: invitation.createdAt,
-        invitationUrl: `http://localhost:3030/invitations/accept/${invitation.token}`
-      }))
+      if (!response.ok) {
+        throw new Error('Failed to fetch invitations')
+      }
 
+      const data = await response.json()
       setInvitations(data)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred')
@@ -63,29 +53,20 @@ export function useInvitations() {
     try {
       setError(null)
 
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 1000))
-
-      // Create new invitation with mock data
-      const newInvitation = {
-        id: `inv-${Date.now()}`,
-        email: data.email,
-        role: data.role || 'MEMBER' as UserRole,
-        status: 'PENDING' as InvitationStatus,
-        token: Math.random().toString(36).substr(2, 9),
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days
-        organizationId: 'org-1',
-        invitedById: MOCK_USER.id,
-        invitedBy: {
-          id: MOCK_USER.id,
-          name: MOCK_USER.name,
-          email: MOCK_USER.email
+      const response = await fetch('/api/invitations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
         },
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        invitationUrl: `http://localhost:3030/invitations/accept/${Math.random().toString(36).substr(2, 9)}`
+        body: JSON.stringify(data),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to create invitation')
       }
 
+      const newInvitation = await response.json()
       setInvitations(prev => [newInvitation, ...prev])
       return newInvitation
     } catch (err) {

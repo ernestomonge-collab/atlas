@@ -1,6 +1,6 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import React, { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -16,12 +16,24 @@ import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { MainLayout } from '@/components/layout/main-layout'
 import { ManageProjectMembersModal } from '@/components/projects/manage-project-members-modal'
+import { EditProjectModal } from '@/components/projects/edit-project-modal'
 import { ProjectConfigModal } from '@/components/projects/project-config-modal'
 import { EditTaskModal } from '@/components/tasks/edit-task-modal'
-import { getMockProjectById, getMockTasksByProjectId, getMockSubtasksByTaskId, MOCK_USER } from '@/lib/mock-data'
-import { ProjectConfig, getDefaultProjectConfig } from '@/lib/project-config'
+import { AddSubtaskModal } from '@/components/tasks/add-subtask-modal'
+import { EpicsList } from '@/components/epics/epics-list'
+import { Epic } from '@/types'
+import { CreateSprintModal } from '@/components/sprints/create-sprint-modal'
+import { SprintList } from '@/components/sprints/sprint-list'
+import { DraggableTaskCard } from '@/components/tasks/draggable-task-card'
+import { DroppableColumn } from '@/components/tasks/droppable-column'
+import { DroppableBacklogColumn } from '@/components/sprints/droppable-backlog-column'
+import { DroppableSprintColumn } from '@/components/sprints/droppable-sprint-column'
+import { useSession } from 'next-auth/react'
+import { useConfirm } from '@/hooks/use-confirm'
+import { ProjectConfig, getDefaultProjectConfig, getProjectConfigFromTemplate } from '@/lib/project-config'
 import { Project, Task, User, ProjectMember } from '@/types'
-import { TaskStatus, TaskPriority } from '@prisma/client'
+import { TaskPriority } from '@prisma/client'
+import { toast } from 'sonner'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import {
@@ -66,8 +78,39 @@ import {
   Columns,
   List,
   Filter,
-  Zap
+  Zap,
+  Search
 } from 'lucide-react'
+
+// Helper function to safely parse dates and avoid timezone issues
+const parseDate = (dateString: string | undefined): Date | undefined => {
+  if (!dateString) return undefined
+  try {
+    // If the date string is just YYYY-MM-DD, append time to avoid timezone conversion
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+      return new Date(dateString + 'T00:00:00')
+    }
+    return new Date(dateString)
+  } catch {
+    return undefined
+  }
+}
+
+// Helper function to format date safely
+const formatDateSafe = (dateString: string | undefined): string => {
+  if (!dateString) return 'Sin fecha'
+  const date = parseDate(dateString)
+  if (!date || isNaN(date.getTime())) return 'Sin fecha'
+  return format(date, 'dd MMM yyyy', { locale: es })
+}
+
+// Helper function to convert Date to YYYY-MM-DD string without timezone conversion
+const dateToString = (date: Date): string => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
 
 interface ProjectDetailPageProps {
   params: Promise<{
@@ -76,9 +119,10 @@ interface ProjectDetailPageProps {
 }
 
 export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
-  // Use mock user for demo
-  const session = { user: MOCK_USER }
+  const { data: session } = useSession()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const { confirm, ConfirmationDialog } = useConfirm()
   const [project, setProject] = useState<Project | null>(null)
   const [tasks, setTasks] = useState<Task[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -90,14 +134,54 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
   const [showConfigModal, setShowConfigModal] = useState(false)
   const [showEditTaskModal, setShowEditTaskModal] = useState(false)
   const [taskToEdit, setTaskToEdit] = useState<Task | null>(null)
-  const [viewMode, setViewMode] = useState<'kanban' | 'grid'>('grid')
+  const [showAddSubtaskModal, setShowAddSubtaskModal] = useState(false)
+  const [parentTaskForSubtask, setParentTaskForSubtask] = useState<{ id: string; title: string } | null>(null)
+  const [viewMode, setViewMode] = useState<'kanban' | 'grid' | 'sprints'>('grid')
   const [projectConfig, setProjectConfig] = useState<ProjectConfig | null>(null)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set())
   const [teamMembers, setTeamMembers] = useState<ProjectMember[]>([])
   const [subtasks, setSubtasks] = useState<Task[]>([])
+  const [sprints, setSprints] = useState<any[]>([])
+  const [showCreateSprintModal, setShowCreateSprintModal] = useState(false)
+  const [sprintToEdit, setSprintToEdit] = useState<any | null>(null)
+  const [epics, setEpics] = useState<Epic[]>([])
+  const [showCreateEpicModal, setShowCreateEpicModal] = useState(false)
   const [showConfigPanel, setShowConfigPanel] = useState(false)
+  const [activeTab, setActiveTab] = useState<'tasks' | 'epics' | 'sprints'>('tasks')
   const [activeTask, setActiveTask] = useState<Task | null>(null)
+  const [showSubtasks, setShowSubtasks] = useState(true)
+  const [expandSubtasksByDefault, setExpandSubtasksByDefault] = useState(false)
+  const [showOverdueTasks, setShowOverdueTasks] = useState(false)
+  const [taskFilters, setTaskFilters] = useState({
+    status: [] as string[],
+    priority: [] as string[],
+    assignee: [] as string[]
+  })
+  const [searchQuery, setSearchQuery] = useState('')
+  const [newTaskForm, setNewTaskForm] = useState({
+    title: '',
+    description: '',
+    priority: 'MEDIUM',
+    assigneeId: '',
+    dueDate: '',
+    sprintId: '',
+    epicId: ''
+  })
+  // Calendar popover state management
+  const [openCalendarTaskId, setOpenCalendarTaskId] = useState<string | null>(null)
+  const [openCalendarSubtaskId, setOpenCalendarSubtaskId] = useState<string | null>(null)
+
+  // Helper to check if current user is owner or admin of this project
+  const isProjectOwnerOrAdmin = project?.members?.some(
+    member => member.userId === parseInt(session?.user?.id || '0')
+      && (member.role === 'OWNER' || member.role === 'ADMIN')
+  )
+
+  // Helper to check if current user can edit (not a VIEWER)
+  const canEdit = project?.members?.some(
+    member => member.userId === parseInt(session?.user?.id || '0') && member.role !== 'VIEWER'
+  )
 
   // Configuración de sensores para drag and drop
   const sensors = useSensors(
@@ -111,335 +195,180 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
   // Funciones para manejar drag and drop
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event
-    const task = tasks.find((t) => t.id === active.id)
+    // Check both tasks and subtasks
+    const task = tasks.find((t) => t.id === active.id) || subtasks.find((s) => s.id === active.id)
     setActiveTask(task as unknown as Task | null)
   }
 
-  const handleDragEnd = (event: DragEndEvent) => {
+  const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event
 
+    console.log('[DRAG END]', { active: active.id, over: over?.id })
+
     if (!over) {
+      console.log('[DRAG END] No over target')
       setActiveTask(null)
       return
     }
 
-    const taskId = active.id as string
-    const newStatus = over.id as string
+    const taskId = String(active.id)
+    let dropZoneId = String(over.id)
 
-    // Actualizar el estado de la tarea
-    setTasks(prev => prev.map(task =>
-      task.id === taskId
-        ? { ...task, status: newStatus as unknown as TaskStatus }
-        : task
-    ) as unknown as Task[])
+    console.log('[DRAG END] Task:', taskId, 'Drop zone:', dropZoneId, 'Type:', typeof dropZoneId)
+
+    // Check if the dragged item is a subtask
+    const draggedSubtask = subtasks.find(s => String(s.id) === taskId)
+    const isSubtask = !!draggedSubtask
+
+    // Determine if we're dropping on a status column or a sprint
+    let isSprintDrop = dropZoneId.startsWith('sprint-')
+
+    // Check if dropZoneId matches any of the configured statuses from the template
+    const validStatusIds = projectConfig?.statuses.map(s => s.id) || []
+    let isStatusDrop = validStatusIds.includes(dropZoneId)
+
+    // If we're dropping on another task (not a column), find that task's status
+    if (!isSprintDrop && !isStatusDrop) {
+      const targetTask = tasks.find(t => String(t.id) === dropZoneId)
+      const targetSubtask = subtasks.find(s => String(s.id) === dropZoneId)
+      const target = targetTask || targetSubtask
+      if (target) {
+        console.log('[DRAG END] Dropped on task', dropZoneId, 'with status:', target.status)
+        dropZoneId = target.status
+        isStatusDrop = true
+      }
+    }
+
+    console.log('[DRAG END] isSprintDrop:', isSprintDrop, 'isStatusDrop:', isStatusDrop, 'isSubtask:', isSubtask)
+
+    if (!isSprintDrop && !isStatusDrop) {
+      console.log('[DRAG END] Invalid drop zone, ignoring')
+      setActiveTask(null)
+      return
+    }
+
+    let updatePayload: any = {}
+
+    if (isSprintDrop) {
+      // Extract sprint ID from dropZoneId (e.g., "sprint-1" -> "1")
+      const sprintId = dropZoneId.replace('sprint-', '')
+
+      console.log('[DRAG END] Sprint drop, sprintId:', sprintId)
+
+      // Optimistically update UI
+      if (isSubtask) {
+        setSubtasks(prev => prev.map(subtask =>
+          subtask.id === taskId
+            ? { ...subtask, sprintId: sprintId === 'backlog' ? null : sprintId }
+            : subtask
+        ) as unknown as Task[])
+      } else {
+        setTasks(prev => prev.map(task =>
+          task.id === taskId
+            ? { ...task, sprintId: sprintId === 'backlog' ? null : sprintId }
+            : task
+        ) as unknown as Task[])
+      }
+
+      updatePayload = { sprintId: sprintId === 'backlog' ? null : sprintId }
+    } else if (isStatusDrop) {
+      console.log('[DRAG END] Status drop, new status:', dropZoneId)
+
+      // Optimistically update UI
+      if (isSubtask) {
+        setSubtasks(prev => prev.map(subtask =>
+          subtask.id === taskId
+            ? { ...subtask, status: dropZoneId }
+            : subtask
+        ) as unknown as Task[])
+      } else {
+        setTasks(prev => prev.map(task =>
+          task.id === taskId
+            ? { ...task, status: dropZoneId }
+            : task
+        ) as unknown as Task[])
+      }
+
+      updatePayload = { status: dropZoneId }
+    }
 
     setActiveTask(null)
-  }
 
-  // Componente para tarjetas draggables
-  function DraggableTaskCard({ task }: { task: Task }) {
-    const [isHovering, setIsHovering] = useState(false)
-    const [editingField, setEditingField] = useState<string | null>(null)
-
-    const {
-      attributes,
-      listeners,
-      setNodeRef,
-      transform,
-      transition,
-      isDragging,
-    } = useSortable({
-      id: task.id,
-    })
-
-    const style = {
-      transform: CSS.Transform.toString(transform),
-      transition,
-      opacity: isDragging ? 0.5 : 1,
+    // Determine the correct API endpoint
+    let apiUrl = `/api/tasks/${taskId}`
+    if (isSubtask && draggedSubtask) {
+      const parentTaskId = (draggedSubtask as any).taskId
+      apiUrl = `/api/tasks/${parentTaskId}/subtasks/${taskId}`
     }
 
-    const handleTaskUpdate = (field: string, value: string | Date | null) => {
-      const updatedTask = { ...task, [field]: value }
+    // Persist to database
+    try {
+      console.log('[DRAG END] Sending PATCH request to', apiUrl, updatePayload)
+      const response = await fetch(apiUrl, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatePayload),
+      })
 
-      // Update assignee object when assigneeId changes
-      if (field === 'assigneeId') {
-        updatedTask.assignee = (value === 'unassigned' || !value ? null :
-          teamMembers.find(member => member.id === value)) as unknown as User | undefined
+      console.log('[DRAG END] Response status:', response.status, response.ok)
+
+      if (!response.ok) {
+        // Revert on error
+        const errorData = await response.json()
+        console.error('[DRAG END] Failed to update task:', errorData)
+        if (isSubtask) {
+          const originalSubtask = subtasks.find(s => s.id === taskId)
+          setSubtasks(prev => prev.map(subtask =>
+            subtask.id === taskId ? (originalSubtask as Task) : subtask
+          ) as unknown as Task[])
+        } else {
+          const originalTask = tasks.find(t => t.id === taskId)
+          setTasks(prev => prev.map(task =>
+            task.id === taskId ? (originalTask as Task) : task
+          ) as unknown as Task[])
+        }
+      } else {
+        const updatedTask = await response.json()
+        console.log('[DRAG END] Task updated successfully:', updatedTask)
+        // Update the task in the state with the server response
+        if (isSubtask) {
+          setSubtasks(prev => prev.map(subtask =>
+            String(subtask.id) === String(taskId) ? { ...updatedTask, taskId: (draggedSubtask as any).taskId } : subtask
+          ) as unknown as Task[])
+        } else {
+          setTasks(prev => prev.map(task =>
+            String(task.id) === String(taskId) ? updatedTask : task
+          ) as unknown as Task[])
+        }
       }
-
-      setTasks(prev => prev.map(t => t.id === task.id ? updatedTask : t))
-      setEditingField(null)
-    }
-
-    const handleDateUpdate = (date: Date | undefined) => {
-      if (date) {
-        handleTaskUpdate('dueDate', date.toISOString().split('T')[0])
+    } catch (error) {
+      // Revert on error
+      console.error('[DRAG END] Error updating task:', error)
+      if (isSubtask) {
+        const originalSubtask = subtasks.find(s => s.id === taskId)
+        setSubtasks(prev => prev.map(subtask =>
+          subtask.id === taskId ? (originalSubtask as Task) : subtask
+        ) as unknown as Task[])
+      } else {
+        const originalTask = tasks.find(t => t.id === taskId)
+        setTasks(prev => prev.map(task =>
+          task.id === taskId ? (originalTask as Task) : task
+        ) as unknown as Task[])
       }
     }
+  }
 
-    const handleFieldClick = (e: React.MouseEvent, field: string) => {
-      e.preventDefault()
-      e.stopPropagation()
-      setEditingField(field)
+  // Handler para actualizar tareas desde el DraggableTaskCard
+  const handleTaskUpdateFromCard = (taskId: string, updates: Partial<Task>) => {
+    // Check if it's a subtask
+    const isSubtask = subtasks.some(s => s.id === taskId)
+
+    if (isSubtask) {
+      setSubtasks(prev => prev.map(s => s.id === taskId ? { ...s, ...updates } : s))
+    } else {
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...updates } : t))
     }
-
-    // Only apply drag props when not editing
-    const dragProps = (isDragging || editingField) ? {} : { ...attributes, ...listeners }
-
-    return (
-      <Card
-        ref={setNodeRef}
-        style={style}
-        {...dragProps}
-        key={task.id}
-        className={`${!editingField ? 'cursor-grab active:cursor-grabbing' : 'cursor-auto'} hover:shadow-md transition-shadow bg-white ${
-          isDragging ? 'rotate-2 scale-105 shadow-lg' : ''
-        }`}
-        onMouseEnter={() => setIsHovering(true)}
-        onMouseLeave={() => {
-          if (!editingField) {
-            setIsHovering(false)
-          }
-        }}
-      >
-        <CardContent className="p-2">
-          <div className="space-y-1">
-            {/* Título de la tarea */}
-            <div>
-              <h4 className="font-medium text-sm leading-tight">{task.title}</h4>
-            </div>
-
-            {/* Información adicional: fecha, asignado y prioridad */}
-            <div className="space-y-0.5">
-              {/* Fecha de vencimiento - Editable */}
-              <div className="flex items-center gap-1 text-xs text-gray-500">
-                <CalendarIcon className="h-3 w-3" />
-                {editingField === 'dueDate' ? (
-                  <Popover open={true} onOpenChange={(open) => {
-                    if (!open) {
-                      setEditingField(null)
-                      setIsHovering(false)
-                    }
-                  }}>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-auto p-0 text-xs text-blue-600"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {task.dueDate ? formatDate(task.dueDate as unknown as string) : 'Sin fecha'}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={task.dueDate ? new Date(task.dueDate) : undefined}
-                        onSelect={handleDateUpdate}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-                ) : (
-                  <span
-                    className={`${isHovering ? 'hover:text-blue-600 cursor-pointer' : ''}`}
-                    onClick={(e) => handleFieldClick(e, 'dueDate')}
-                  >
-                    {task.dueDate ? formatDate(task.dueDate as unknown as string) : 'Sin fecha'}
-                  </span>
-                )}
-              </div>
-
-              {/* Persona asignada y prioridad */}
-              <div className="flex items-center justify-between">
-                {/* Persona asignada - Editable */}
-                <div className="flex items-center gap-1 text-xs text-gray-500">
-                  <Users className="h-3 w-3" />
-                  {editingField === 'assignee' ? (
-                    <Select
-                      open={true}
-                      value={task.assigneeId || 'unassigned'}
-                      onValueChange={(value) => handleTaskUpdate('assigneeId', value === 'unassigned' ? null : value)}
-                      onOpenChange={(open) => {
-                        if (!open) {
-                          setEditingField(null)
-                          setIsHovering(false)
-                        }
-                      }}
-                    >
-                      <SelectTrigger
-                        className="h-auto p-0 border-none text-xs bg-transparent text-blue-600"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <SelectValue>
-                          <span className="truncate max-w-[100px]">
-                            {task.assignee ? task.assignee.name : 'Sin asignar'}
-                          </span>
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent onClick={(e) => e.stopPropagation()}>
-                        <SelectItem value="unassigned">
-                          <div className="flex items-center gap-1">
-                            <Users className="h-3 w-3" />
-                            Sin asignar
-                          </div>
-                        </SelectItem>
-                        {teamMembers.map((member) => (
-                          <SelectItem key={member.id} value={member.id}>
-                            <div className="flex items-center gap-1">
-                              <div className="h-4 w-4 rounded-full bg-blue-100 flex items-center justify-center">
-                                <span className="text-xs font-medium text-blue-600">
-                                  {(member as unknown as User).name?.charAt(0) || (member as unknown as User).email?.charAt(0)}
-                                </span>
-                              </div>
-                              {(member as unknown as User).name || (member as unknown as User).email}
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <span
-                      className={`truncate max-w-[100px] ${isHovering ? 'hover:text-blue-600 cursor-pointer' : ''}`}
-                      onClick={(e) => handleFieldClick(e, 'assignee')}
-                    >
-                      {task.assignee ? task.assignee.name : 'Sin asignar'}
-                    </span>
-                  )}
-                </div>
-
-                {/* Prioridad - Editable */}
-                {editingField === 'priority' ? (
-                  <Select
-                    open={true}
-                    value={task.priority}
-                    onValueChange={(value) => handleTaskUpdate('priority', value)}
-                    onOpenChange={(open) => {
-                      if (!open) {
-                        setEditingField(null)
-                        setIsHovering(false)
-                      }
-                    }}
-                  >
-                    <SelectTrigger
-                      className="h-auto p-0 border-none bg-transparent"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <Badge
-                        variant="outline"
-                        className={`text-xs cursor-pointer ${getPriorityColor(task.priority)} ring-2 ring-blue-200`}
-                      >
-                        {getPriorityText(task.priority)}
-                      </Badge>
-                    </SelectTrigger>
-                    <SelectContent onClick={(e) => e.stopPropagation()}>
-                      <SelectItem value="LOW">
-                        <Badge
-                          variant="outline"
-                          className={`text-xs ${getPriorityColor('LOW')}`}
-                        >
-                          {getPriorityText('LOW')}
-                        </Badge>
-                      </SelectItem>
-                      <SelectItem value="MEDIUM">
-                        <Badge
-                          variant="outline"
-                          className={`text-xs ${getPriorityColor('MEDIUM')}`}
-                        >
-                          {getPriorityText('MEDIUM')}
-                        </Badge>
-                      </SelectItem>
-                      <SelectItem value="HIGH">
-                        <Badge
-                          variant="outline"
-                          className={`text-xs ${getPriorityColor('HIGH')}`}
-                        >
-                          {getPriorityText('HIGH')}
-                        </Badge>
-                      </SelectItem>
-                      <SelectItem value="URGENT">
-                        <Badge
-                          variant="outline"
-                          className={`text-xs ${getPriorityColor('URGENT')}`}
-                        >
-                          {getPriorityText('URGENT')}
-                        </Badge>
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <Badge
-                    variant="outline"
-                    className={`text-xs ${getPriorityColor(task.priority)} ${isHovering ? 'hover:ring-2 hover:ring-blue-200 cursor-pointer' : ''}`}
-                    onClick={(e) => handleFieldClick(e, 'priority')}
-                  >
-                    {getPriorityText(task.priority)}
-                  </Badge>
-                )}
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    )
   }
-
-  // Componente para columnas droppables
-  function DroppableColumn({ column }: { column: { id: string; title: string; tasks: Task[] } }) {
-    const { setNodeRef } = useDroppable({
-      id: column.id,
-    })
-
-    return (
-      <div
-        ref={setNodeRef}
-        className={`rounded-lg border-2 border-gray-200 min-h-[400px] w-80 flex-shrink-0`}
-      >
-        <div className="p-4 border-b border-gray-200">
-          <div className="flex items-center justify-between">
-            <h3 className={`font-semibold text-gray-700`}>
-              {column.title}
-            </h3>
-            <Badge variant="secondary" className="bg-white">
-              {column.tasks.length}
-            </Badge>
-          </div>
-        </div>
-        <div className="p-4 space-y-3">
-          <SortableContext
-            items={column.tasks.map((task: Task) => task.id)}
-            strategy={verticalListSortingStrategy}
-          >
-            {column.tasks.map((task: Task) => (
-              <DraggableTaskCard key={task.id} task={task} />
-            ))}
-          </SortableContext>
-
-          {column.tasks.length === 0 && (
-            <div className="text-center py-8 text-gray-400">
-              <LayoutGrid className="h-8 w-8 mx-auto mb-2" />
-              <p className="text-sm">No hay tareas</p>
-            </div>
-          )}
-        </div>
-      </div>
-    )
-  }
-  const [showSubtasks, setShowSubtasks] = useState(true)
-  const [expandSubtasksByDefault, setExpandSubtasksByDefault] = useState(false)
-  const [showOverdueTasks, setShowOverdueTasks] = useState(false)
-  const [taskFilters, setTaskFilters] = useState({
-    status: [] as string[],
-    priority: [] as string[],
-    assignee: [] as string[]
-  })
-  const [newTaskForm, setNewTaskForm] = useState({
-    title: '',
-    description: '',
-    priority: 'MEDIUM',
-    assigneeId: '',
-    dueDate: ''
-  })
 
   useEffect(() => {
     async function getParams() {
@@ -449,42 +378,102 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
     getParams()
   }, [params])
 
-  // Remove auth redirect - using mock data
-
   useEffect(() => {
-    if (projectId) {
-      fetchProjectDetails()
-      fetchTeamMembers()
+    if (projectId && session?.user?.id) {
+      // Load critical data first (blocking)
+      Promise.all([
+        fetchProjectDetails()
+      ]).then(() => {
+        // Load secondary data in background (non-blocking)
+        Promise.all([
+          fetchTeamMembers(),
+          fetchEpics(),
+          fetchSprints(),
+          fetchSubtasks()
+        ]).catch(error => {
+          console.error('Error loading secondary project data:', error)
+        })
+      }).catch(error => {
+        console.error('Error loading project data:', error)
+      })
     }
-  }, [projectId])
+  }, [projectId, session?.user?.id])
+
+  // Check for taskId in URL parameters (from global search)
+  useEffect(() => {
+    const taskId = searchParams.get('taskId')
+
+    if (taskId && tasks.length > 0 && !isLoading) {
+      // Find the task in the loaded tasks
+      const task = tasks.find(t => String(t.id) === taskId)
+
+      if (task) {
+        // Open the modal with this task
+        setTaskToEdit(task)
+        setShowEditTaskModal(true)
+
+        // Remove the taskId from the URL (clean up)
+        const newUrl = window.location.pathname
+        window.history.replaceState({}, '', newUrl)
+      }
+    }
+  }, [searchParams, tasks, isLoading])
+
+  // Session is guaranteed by middleware, but add safety check
+  if (!session) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+      </div>
+    )
+  }
 
   const fetchProjectDetails = async () => {
     if (!projectId) return
 
     try {
       setIsLoading(true)
-      await new Promise(resolve => setTimeout(resolve, 800))
 
-      const projectData = getMockProjectById(projectId)
-      const projectTasks = getMockTasksByProjectId(projectId)
+      // Fetch project and tasks in parallel
+      const [projectRes, tasksRes] = await Promise.all([
+        fetch(`/api/projects/${projectId}`),
+        fetch(`/api/projects/${projectId}/tasks`)
+      ])
 
-      if (!projectData) {
+      if (!projectRes.ok) {
+        // Handle 403 Forbidden - User is not a member
+        if (projectRes.status === 403) {
+          const errorData = await projectRes.json()
+          toast.error(errorData.error || 'No tienes acceso a este proyecto', {
+            description: 'Solicita al propietario que te agregue como miembro.'
+          })
+        } else {
+          toast.error('No se pudo cargar el proyecto')
+        }
         router.push('/projects')
         return
       }
 
+      const projectData = await projectRes.json()
       setProject(projectData as unknown as Project)
-      setTasks(projectTasks as unknown as Task[])
 
-      // Load subtasks for all tasks in the project
-      const allSubtasks = projectTasks.flatMap(task => getMockSubtasksByTaskId(task.id))
-      setSubtasks(allSubtasks as unknown as Task[])
+      if (tasksRes.ok) {
+        const projectTasks = await tasksRes.json()
+        setTasks(projectTasks as unknown as Task[])
+      }
 
-      // Initialize project configuration
-      const config = getDefaultProjectConfig(projectId)
+      // Initialize project configuration from template if available
+      let config: ProjectConfig
+      if (projectData.template?.states && projectData.template.states.length > 0) {
+        config = getProjectConfigFromTemplate(projectId, projectData.template.states)
+      } else {
+        config = getDefaultProjectConfig(projectId)
+      }
       setProjectConfig(config)
     } catch (error) {
       console.error('Error fetching project details:', error)
+      toast.error('Error al cargar el proyecto')
+      router.push('/projects')
     } finally {
       setIsLoading(false)
     }
@@ -505,6 +494,128 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
     }
   }
 
+  const fetchEpics = async () => {
+    if (!projectId) return
+
+    try {
+      const response = await fetch(`/api/projects/${projectId}/epics`)
+      if (response.ok) {
+        const epicsData = await response.json()
+        setEpics(epicsData)
+      }
+    } catch (error) {
+      console.error('Failed to fetch epics:', error)
+    }
+  }
+
+  const fetchSubtasks = async () => {
+    if (!projectId) return
+
+    try {
+      const response = await fetch(`/api/projects/${projectId}/subtasks`)
+      if (response.ok) {
+        const subtasksData = await response.json()
+        // Add taskId property for compatibility
+        const formattedSubtasks = subtasksData.map((subtask: any) => ({
+          ...subtask,
+          taskId: subtask.parentTaskId?.toString()
+        }))
+        setSubtasks(formattedSubtasks)
+      }
+    } catch (error) {
+      console.error('Failed to fetch subtasks:', error)
+    }
+  }
+
+  const fetchSprints = async () => {
+    if (!projectId) return
+
+    try {
+      const response = await fetch(`/api/projects/${projectId}/sprints`)
+      if (response.ok) {
+        const sprintsData = await response.json()
+        // Sort sprints chronologically by start date (oldest first)
+        const sortedSprints = sprintsData.sort((a: any, b: any) => {
+          return new Date(a.startDate).getTime() - new Date(b.startDate).getTime()
+        })
+        setSprints(sortedSprints)
+      }
+    } catch (error) {
+      console.error('Failed to fetch sprints:', error)
+    }
+  }
+
+  // Sprint handlers
+  const handleSprintCreated = () => {
+    fetchSprints()
+    setShowCreateSprintModal(false)
+    setSprintToEdit(null)
+  }
+
+  const handleCloseSprintModal = (open: boolean) => {
+    setShowCreateSprintModal(open)
+    if (!open) {
+      setSprintToEdit(null)
+    }
+  }
+
+  const handleEditSprint = (sprint: any) => {
+    setSprintToEdit(sprint)
+    setShowCreateSprintModal(true)
+  }
+
+  const handleDeleteSprint = async (sprint: any) => {
+    const confirmed = await confirm({
+      title: 'Eliminar sprint',
+      description: `¿Estás seguro de que quieres eliminar el sprint "${sprint.name}"?`,
+      confirmText: 'Eliminar',
+      cancelText: 'Cancelar',
+      variant: 'destructive'
+    })
+
+    if (!confirmed) {
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/sprints/${sprint.id}`, {
+        method: 'DELETE',
+      })
+
+      if (response.ok) {
+        toast.success('Sprint eliminado exitosamente')
+        fetchSprints()
+      } else {
+        console.error('Failed to delete sprint')
+        toast.error('Error al eliminar el sprint.')
+      }
+    } catch (error) {
+      console.error('Error deleting sprint:', error)
+      toast.error('Error al eliminar el sprint.')
+    }
+  }
+
+  const handleSprintStatusChange = async (sprintId: number, newStatus: 'PLANNING' | 'ACTIVE' | 'COMPLETED') => {
+    try {
+      const response = await fetch(`/api/sprints/${sprintId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      })
+
+      if (response.ok) {
+        toast.success('Estado del sprint actualizado')
+        fetchSprints()
+      } else {
+        console.error('Failed to update sprint status')
+        toast.error('Error al actualizar el estado del sprint.')
+      }
+    } catch (error) {
+      console.error('Error updating sprint status:', error)
+      toast.error('Error al actualizar el estado del sprint.')
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -519,7 +630,13 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
 
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('es-ES', {
+    // If the date is in ISO format (with time), use it directly
+    // If it's YYYY-MM-DD, parse it as local date to avoid timezone issues
+    const date = dateString.includes('T')
+      ? new Date(dateString)
+      : new Date(dateString + 'T12:00:00')
+
+    return date.toLocaleDateString('es-ES', {
       year: 'numeric',
       month: 'long',
       day: 'numeric'
@@ -597,14 +714,14 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
 
   const handleEditTask = (taskId: string) => {
     // First try to find it in main tasks
-    let task = tasks.find(t => t.id === taskId)
+    let task = tasks.find(t => t.id.toString() === taskId.toString())
 
     // If not found, search in subtasks
     if (!task) {
       // Search through all subtasks
-      const subtask = subtasks.find(st => st.id === taskId)
+      const subtask = subtasks.find(st => st.id.toString() === taskId.toString())
       if (subtask) {
-        const mainTask = tasks.find(t => t.id === (subtask as unknown as { taskId?: string }).taskId)
+        const mainTask = tasks.find(t => t.id.toString() === (subtask as unknown as { taskId?: string }).taskId)
         if (mainTask) {
           // Convert subtask to task-like object for the modal
           task = {
@@ -614,7 +731,8 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
             assigneeId: subtask.assigneeId || undefined,
             assignee: subtask.assignee || undefined,
             dueDate: subtask.dueDate || undefined,
-            projectId: mainTask.projectId
+            projectId: mainTask.projectId,
+            isSubtask: true
           }
         }
       }
@@ -627,26 +745,37 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
   }
 
   const handleCreateTask = async () => {
-    if (!newTaskForm.title.trim()) return
+    if (!newTaskForm.title.trim() || !projectId) return
+
+    // Get the first status from the template (sorted by order)
+    const firstStatus = projectConfig?.statuses.sort((a, b) => a.order - b.order)[0]
+    const defaultStatus = firstStatus?.id || 'PENDING'
 
     try {
-      // TODO: Implement actual API call to create task
-      console.log('Creating task:', newTaskForm)
+      const response = await fetch(`/api/projects/${projectId}/tasks`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          title: newTaskForm.title,
+          description: newTaskForm.description,
+          priority: newTaskForm.priority,
+          assigneeId: newTaskForm.assigneeId || undefined,
+          dueDate: newTaskForm.dueDate || undefined,
+          sprintId: newTaskForm.sprintId || undefined,
+          epicId: newTaskForm.epicId || undefined,
+          status: defaultStatus
+        }),
+      })
 
-      // For now, we'll simulate the creation
-      const newTask = {
-        id: `task-${Date.now()}`,
-        title: newTaskForm.title,
-        description: newTaskForm.description,
-        status: 'PENDING',
-        priority: newTaskForm.priority,
-        projectId: projectId,
-        assigneeId: newTaskForm.assigneeId || null,
-        assignee: newTaskForm.assigneeId ? { id: newTaskForm.assigneeId, name: 'Usuario Asignado' } : null,
-        dueDate: newTaskForm.dueDate || null,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+      if (!response.ok) {
+        const errorData = await response.json()
+        console.error('Failed to create task:', errorData)
+        return
       }
+
+      const newTask = await response.json()
 
       // Add to current tasks
       setTasks(prev => [...prev, newTask as unknown as Task])
@@ -658,7 +787,9 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
         description: '',
         priority: 'MEDIUM',
         assigneeId: '',
-        dueDate: ''
+        dueDate: '',
+        sprintId: '',
+        epicId: ''
       })
     } catch (error) {
       console.error('Error creating task:', error)
@@ -666,34 +797,45 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
   }
 
   const handleCreateSubtask = (parentTaskId: string) => {
-    // Create a new subtask for the parent task
-    const newSubtask = {
-      id: `subtask-${Date.now()}`,
-      title: 'Nueva subtarea',
-      description: '',
-      status: 'PENDING',
-      order: subtasks.filter(s => (s as unknown as { taskId?: string }).taskId === parentTaskId).length,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+    // Find the parent task
+    const parentTask = tasks.find(t => t.id === parentTaskId)
+    if (!parentTask) return
+
+    // Set parent task info and open modal
+    setParentTaskForSubtask({
+      id: parentTaskId,
+      title: parentTask.title
+    })
+    setShowAddSubtaskModal(true)
+  }
+
+  const handleSubtaskAdded = async () => {
+    // Reload all tasks to get updated data including subtasks
+    if (!projectId) return
+
+    try {
+      const tasksRes = await fetch(`/api/projects/${projectId}/tasks`)
+      if (tasksRes.ok) {
+        const projectTasks = await tasksRes.json()
+        setTasks(projectTasks as unknown as Task[])
+
+        // Extract subtasks from tasks
+        const allSubtasks: Task[] = []
+        projectTasks.forEach((task: any) => {
+          if (task.subtasks && task.subtasks.length > 0) {
+            task.subtasks.forEach((subtask: any) => {
+              allSubtasks.push({
+                ...subtask,
+                taskId: task.id.toString()
+              } as unknown as Task)
+            })
+          }
+        })
+        setSubtasks(allSubtasks)
+      }
+    } catch (error) {
+      console.error('Failed to reload tasks:', error)
     }
-
-    // Add to subtasks state
-    setSubtasks(prev => [...prev, newSubtask as unknown as Task])
-
-    // Open edit modal for the new subtask
-    const taskForModal = {
-      ...newSubtask,
-      priority: 'MEDIUM',
-      assigneeId: null,
-      assignee: null,
-      dueDate: null,
-      projectId: projectId,
-      isSubtask: true,
-      parentTaskId: parentTaskId
-    }
-
-    setTaskToEdit(taskForModal as unknown as Task)
-    setShowEditTaskModal(true)
   }
 
   const handleFormChange = (field: string, value: string) => {
@@ -703,12 +845,41 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
     }))
   }
 
-  const handleTaskUpdated = (updatedTask: Task) => {
+  const handleTaskUpdated = async (updatedTask: Task) => {
+    console.log('[handleTaskUpdated] Called with:', updatedTask)
+    console.log('[handleTaskUpdated] isSubtask?', (updatedTask as unknown as { isSubtask?: boolean }).isSubtask)
+
     if ((updatedTask as unknown as { isSubtask?: boolean }).isSubtask) {
-      // Handle subtask updates differently - we'll implement this with mock data updates
-      console.log('Subtask updated:', updatedTask)
-      // For now, just close the modal since subtasks are from mock data
-      // In a real app, this would update the backend and refresh the data
+      // Handle subtask updates - reload all tasks to refresh the grid
+      console.log('[handleTaskUpdated] Reloading tasks for subtask update')
+
+      // Reload all tasks and subtasks
+      if (projectId) {
+        try {
+          const tasksRes = await fetch(`/api/projects/${projectId}/tasks`)
+          if (tasksRes.ok) {
+            const projectTasks = await tasksRes.json()
+            setTasks(projectTasks as unknown as Task[])
+
+            // Extract subtasks from tasks
+            const allSubtasks: Task[] = []
+            projectTasks.forEach((task: any) => {
+              if (task.subtasks && task.subtasks.length > 0) {
+                task.subtasks.forEach((subtask: any) => {
+                  allSubtasks.push({
+                    ...subtask,
+                    taskId: task.id.toString()
+                  } as unknown as Task)
+                })
+              }
+            })
+            setSubtasks(allSubtasks)
+          }
+        } catch (error) {
+          console.error('Failed to reload tasks:', error)
+        }
+      }
+
       setTaskToEdit(null)
     } else {
       // Handle main task updates
@@ -720,11 +891,18 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
   }
 
   // New function to handle subtask inline updates
-  const handleSubtaskUpdate = (subtaskId: string, field: string, value: string | Date | null) => {
+  const handleSubtaskUpdate = async (subtaskId: string, field: string, value: string | Date | null) => {
+    // Find the subtask to get its taskId
+    const subtask = subtasks.find(s => s.id === subtaskId)
+    if (!subtask) return
+
+    const taskId = (subtask as any).taskId
+
+    // Optimistically update UI
     setSubtasks(prevSubtasks =>
-      prevSubtasks.map(subtask => {
-        if (subtask.id === subtaskId) {
-          const updatedSubtask = { ...subtask }
+      prevSubtasks.map(st => {
+        if (st.id === subtaskId) {
+          const updatedSubtask = { ...st }
 
           switch (field) {
             case 'status':
@@ -739,18 +917,74 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
                 teamMembers.find(member => member.id === value)) as unknown as User | undefined
               break
             case 'dueDate':
-              (updatedSubtask as unknown as { dueDate: string | null }).dueDate = value ? (value instanceof Date ? value.toISOString() : value as string) : null
+              (updatedSubtask as unknown as { dueDate: string | null }).dueDate = value ? (value instanceof Date ? dateToString(value) : value as string) : null
               break
           }
 
           (updatedSubtask as unknown as { updatedAt: string }).updatedAt = new Date().toISOString()
           return updatedSubtask
         }
-        return subtask
+        return st
       })
     )
 
-    console.log(`Updated subtask ${subtaskId}: ${field} = ${value}`)
+    // Persist to API
+    try {
+      const updateData: any = {}
+
+      switch (field) {
+        case 'status':
+          updateData.status = value
+          break
+        case 'priority':
+          updateData.priority = value
+          break
+        case 'assignee':
+          updateData.assigneeId = value === 'unassigned' ? null : value
+          break
+        case 'dueDate':
+          updateData.dueDate = value ? (value instanceof Date ? dateToString(value) : value) : null
+          break
+      }
+
+      const response = await fetch(`/api/tasks/${taskId}/subtasks/${subtaskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updateData)
+      })
+
+      if (!response.ok) {
+        // Revert on error
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+        console.error('Failed to update subtask:', {
+          status: response.status,
+          error: errorData,
+          subtaskId,
+          taskId,
+          field,
+          value,
+          updateData
+        })
+        setSubtasks(prevSubtasks =>
+          prevSubtasks.map(st => st.id === subtaskId ? subtask : st)
+        )
+      } else {
+        // Refresh parent task to update subtask count/progress
+        const parentResponse = await fetch(`/api/tasks/${taskId}`)
+        if (parentResponse.ok) {
+          const refreshedParentTask = await parentResponse.json()
+          setTasks(prev => prev.map(task =>
+            task.id.toString() === taskId.toString() ? refreshedParentTask : task
+          ))
+        }
+      }
+    } catch (error) {
+      // Revert on error
+      console.error('Error updating subtask:', error)
+      setSubtasks(prevSubtasks =>
+        prevSubtasks.map(st => st.id === subtaskId ? subtask : st)
+      )
+    }
   }
 
   const handleConfigUpdated = (updatedConfig: ProjectConfig) => {
@@ -785,16 +1019,80 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
     })
   }
 
+  // Filter tasks by search query for Kanban
+  const getFilteredTasksForKanban = () => {
+    let filtered = tasks
+
+    // Helper function to check if a task matches the filter criteria
+    const taskMatchesFilters = (task: Task) => {
+      // Check search query
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase()
+        const matchesSearch =
+          task.title.toLowerCase().includes(query) ||
+          task.description?.toLowerCase().includes(query) ||
+          task.assignee?.name?.toLowerCase().includes(query)
+        if (!matchesSearch) return false
+      }
+
+      // Check status filter
+      if (taskFilters.status.length > 0) {
+        if (!taskFilters.status.includes(task.status)) return false
+      }
+
+      // Check priority filter
+      if (taskFilters.priority.length > 0) {
+        if (!taskFilters.priority.includes(task.priority)) return false
+      }
+
+      // Check assignee filter
+      if (taskFilters.assignee.length > 0) {
+        if (!task.assigneeId || !taskFilters.assignee.includes(task.assigneeId.toString())) return false
+      }
+
+      return true
+    }
+
+    // Filter tasks considering subtasks
+    filtered = tasks.filter(task => {
+      // Check if the parent task itself matches the filters
+      if (taskMatchesFilters(task)) {
+        return true
+      }
+
+      // Check if any subtask matches the filters
+      const taskSubtasks = subtasks.filter(st => (st as any).taskId === task.id.toString())
+      const hasMatchingSubtask = taskSubtasks.some(subtask => taskMatchesFilters(subtask))
+
+      return hasMatchingSubtask
+    })
+
+    return filtered
+  }
+
   // Organize tasks for kanban view based on project configuration
   const getKanbanColumns = () => {
     if (!projectConfig) return []
+
+    const filteredTasks = getFilteredTasksForKanban()
+
+    // Collect all tasks including subtasks if showSubtasks is enabled
+    let allTasksToDisplay = [...filteredTasks]
+
+    if (showSubtasks) {
+      // Add subtasks to the list
+      filteredTasks.forEach(task => {
+        const taskSubtasks = subtasks.filter(s => s.taskId === task.id.toString())
+        allTasksToDisplay = [...allTasksToDisplay, ...taskSubtasks]
+      })
+    }
 
     if (projectConfig.kanbanLayout === 'status') {
       // Group by custom statuses
       const tasksByStatus: Record<string, Task[]> = {}
 
       projectConfig.statuses.forEach(status => {
-        tasksByStatus[status.id] = tasks.filter(task =>
+        tasksByStatus[status.id] = allTasksToDisplay.filter(task =>
           task.status.toLowerCase() === status.id.toLowerCase() ||
           task.status === status.name.toUpperCase() ||
           task.status === status.id.toUpperCase()
@@ -813,10 +1111,10 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
     } else {
       // Group by priority (original behavior)
       const tasksByPriority = {
-        HIGH: tasks.filter(task => task.priority === 'HIGH'),
-        MEDIUM: tasks.filter(task => task.priority === 'MEDIUM'),
-        LOW: tasks.filter(task => task.priority === 'LOW'),
-        URGENT: tasks.filter(task => task.priority === 'URGENT')
+        HIGH: allTasksToDisplay.filter(task => task.priority === 'HIGH'),
+        MEDIUM: allTasksToDisplay.filter(task => task.priority === 'MEDIUM'),
+        LOW: allTasksToDisplay.filter(task => task.priority === 'LOW'),
+        URGENT: allTasksToDisplay.filter(task => task.priority === 'URGENT')
       }
 
       return [
@@ -879,14 +1177,13 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
   // Handle task status change in kanban view
   const handleTaskStatusChange = (taskId: string, newStatus: string) => {
     setTasks(prev => prev.map(task =>
-      task.id === taskId ? { ...task, status: newStatus as unknown as TaskStatus } : task
+      task.id === taskId ? { ...task, status: newStatus } : task
     ) as unknown as Task[])
   }
 
   return (
     <MainLayout
       title={project.name}
-      description={project.description || 'Detalles del proyecto y gestión de tareas'}
     >
       {/* Back button */}
       <div className="mb-6">
@@ -900,60 +1197,94 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
       </div>
 
       {/* Project Header */}
-      <div className="mb-8">
-        <div className="flex items-start justify-between mb-6">
+      <div className="mb-4">
+        <div className="flex items-start justify-between mb-4">
           <div className="flex-1">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">{project.name}</h1>
-            <div className="flex items-center space-x-4 text-sm text-gray-500">
-              <div className="flex items-center">
-                <CalendarIcon className="h-4 w-4 mr-1" />
-                Creado: {formatDate(project.createdAt as unknown as string)}
-              </div>
-              <div className="flex items-center">
-                <Clock className="h-4 w-4 mr-1" />
-                Actualizado: {formatDate(project.updatedAt as unknown as string)}
-              </div>
-            </div>
+            <h1 className="text-3xl font-bold text-gray-900">{project.name}</h1>
           </div>
           <div className="flex items-center space-x-2">
-            <Button
-              size="sm"
-              onClick={handleNewTask}
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Nueva Tarea
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowManageMembersModal(true)}
-            >
-              <UserPlus className="h-4 w-4 mr-2" />
-              Gestionar Miembros
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setEditProjectData({
-                  name: project.name,
-                  description: project.description || ''
-                })
-                setShowEditProjectModal(true)
-              }}
-            >
-              <Edit className="h-4 w-4 mr-2" />
-              Editar
-            </Button>
+            {canEdit && (
+              <Button
+                size="sm"
+                onClick={handleNewTask}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Nueva Tarea
+              </Button>
+            )}
+            {isProjectOwnerOrAdmin && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowManageMembersModal(true)}
+              >
+                <UserPlus className="h-4 w-4 mr-2" />
+                Gestionar Miembros
+              </Button>
+            )}
+            {isProjectOwnerOrAdmin && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setEditProjectData({
+                    name: project.name,
+                    description: project.description || ''
+                  })
+                  setShowEditProjectModal(true)
+                }}
+              >
+                <Edit className="h-4 w-4 mr-2" />
+                Editar
+              </Button>
+            )}
           </div>
         </div>
 
-        {/* Project Description - Full Width */}
-        {project.description && (
-          <div className="mb-6">
-            <p className="text-gray-600 text-lg leading-relaxed">{project.description}</p>
-          </div>
-        )}
+        {/* Tabs: Tareas / Épicas / Sprints */}
+        <div className="border-b border-gray-200 mb-6">
+          <nav className="-mb-px flex space-x-8">
+            <button
+              onClick={() => setActiveTab('tasks')}
+              className={`
+                flex items-center gap-2 py-4 px-1 border-b-2 font-medium text-sm transition-colors
+                ${activeTab === 'tasks'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-blue-500 hover:border-blue-300'
+                }
+              `}
+            >
+              <CheckCircle2 className="h-5 w-5" />
+              Tareas
+            </button>
+            <button
+              onClick={() => setActiveTab('epics')}
+              className={`
+                flex items-center gap-2 py-4 px-1 border-b-2 font-medium text-sm transition-colors
+                ${activeTab === 'epics'
+                  ? 'border-purple-500 text-purple-600'
+                  : 'border-transparent text-gray-500 hover:text-purple-500 hover:border-purple-300'
+                }
+              `}
+            >
+              <Layers className="h-5 w-5" />
+              Épicas
+            </button>
+            <button
+              onClick={() => setActiveTab('sprints')}
+              className={`
+                flex items-center gap-2 py-4 px-1 border-b-2 font-medium text-sm transition-colors
+                ${activeTab === 'sprints'
+                  ? 'border-green-500 text-green-600'
+                  : 'border-transparent text-gray-500 hover:text-green-500 hover:border-green-300'
+                }
+              `}
+            >
+              <Target className="h-5 w-5" />
+              Sprints
+            </button>
+          </nav>
+        </div>
 
       </div>
 
@@ -962,39 +1293,85 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle>Tareas del Proyecto</CardTitle>
-              <CardDescription>
-                {tasks.length > 0
-                  ? `Gestiona las ${tasks.length} tarea${tasks.length !== 1 ? 's' : ''} de este proyecto`
-                  : 'Crea la primera tarea para comenzar a organizar el trabajo'
-                }
-              </CardDescription>
+              <CardTitle>
+                {activeTab === 'tasks' ? 'Tareas del Proyecto' :
+                 activeTab === 'epics' ? 'Épicas del Proyecto' :
+                 'Sprints del Proyecto'}
+              </CardTitle>
+              {activeTab === 'tasks' && (
+                <CardDescription className="mt-1">
+                  {tasks.length > 0
+                    ? `Gestiona las ${tasks.length} tarea${tasks.length !== 1 ? 's' : ''} de este proyecto`
+                    : 'Crea la primera tarea para comenzar a organizar el trabajo'
+                  }
+                </CardDescription>
+              )}
+              {activeTab === 'epics' && (
+                <CardDescription className="mt-1">
+                  {epics.length > 0
+                    ? `Gestiona las ${epics.length} épica${epics.length !== 1 ? 's' : ''} de este proyecto`
+                    : 'Crea la primera épica para comenzar a organizar objetivos de alto nivel'
+                  }
+                </CardDescription>
+              )}
+              {activeTab === 'sprints' && (
+                <CardDescription className="mt-1">
+                  {sprints.length > 0
+                    ? `Gestiona los ${sprints.length} sprint${sprints.length !== 1 ? 's' : ''} de este proyecto`
+                    : 'Crea el primer sprint para comenzar a planificar iteraciones'
+                  }
+                </CardDescription>
+              )}
             </div>
+
             <div className="flex items-center space-x-2">
-              {/* View Toggle Buttons */}
-              <div className="flex items-center border border-gray-200 rounded-lg p-1">
-                <Button
-                  variant={viewMode === 'grid' ? 'default' : 'ghost'}
-                  size="sm"
-                  onClick={() => setViewMode('grid')}
-                  className="h-8 px-3"
-                >
-                  <Grid3X3 className="h-4 w-4 mr-1" />
-                  Lista
-                </Button>
-                <Button
-                  variant={viewMode === 'kanban' ? 'default' : 'ghost'}
-                  size="sm"
-                  onClick={() => setViewMode('kanban')}
-                  className="h-8 px-3"
-                >
-                  <LayoutGrid className="h-4 w-4 mr-1" />
-                  Kanban
-                </Button>
-              </div>
+              {/* Search Box - Only for tasks */}
+              {activeTab === 'tasks' && (
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <Input
+                    type="text"
+                    placeholder="Buscar tareas..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-10 w-64"
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              )}
 
+              {/* View Toggle Buttons - Only for tasks */}
+              {activeTab === 'tasks' && (
+                <div className="flex items-center border border-gray-200 rounded-lg p-1">
+                  <Button
+                    variant={viewMode === 'grid' ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => setViewMode('grid')}
+                    className="h-8 px-3"
+                  >
+                    <Grid3X3 className="h-4 w-4 mr-1" />
+                    Lista
+                  </Button>
+                  <Button
+                    variant={viewMode === 'kanban' ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => setViewMode('kanban')}
+                    className="h-8 px-3"
+                  >
+                    <LayoutGrid className="h-4 w-4 mr-1" />
+                    Kanban
+                  </Button>
+                </div>
+              )}
 
-              {viewMode === 'grid' && (
+              {activeTab === 'tasks' && viewMode === 'grid' && (
                 <Button
                   variant="outline"
                   onClick={() => setShowConfigPanel(true)}
@@ -1003,11 +1380,50 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
                   Personalizar
                 </Button>
               )}
+
+              {activeTab === 'epics' && canEdit && (
+                <Button
+                  onClick={() => setShowCreateEpicModal(true)}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Nueva Épica
+                </Button>
+              )}
+
+              {activeTab === 'sprints' && canEdit && (
+                <Button
+                  onClick={() => setShowCreateSprintModal(true)}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Crear Sprint
+                </Button>
+              )}
             </div>
           </div>
         </CardHeader>
         <CardContent>
-          {tasks.length === 0 ? (
+          {activeTab === 'epics' ? (
+            <EpicsList
+              projectId={projectId || ''}
+              projectConfig={projectConfig}
+              showCreateModal={showCreateEpicModal}
+              onCreateModalChange={setShowCreateEpicModal}
+              onEpicCreated={fetchEpics}
+              canEdit={canEdit}
+              epics={epics}
+            />
+          ) : activeTab === 'sprints' ? (
+            <SprintList
+              sprints={sprints}
+              onEdit={handleEditSprint}
+              onDelete={handleDeleteSprint}
+              onStatusChange={handleSprintStatusChange}
+              onSprintUpdated={fetchSprints}
+              projectId={projectId}
+              projectConfig={projectConfig}
+              canEdit={canEdit}
+            />
+          ) : tasks.length === 0 ? (
             <div className="text-center py-12">
               <Target className="h-12 w-12 text-gray-400 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-gray-900 mb-2">
@@ -1039,8 +1455,17 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
                     switch (columnId) {
                       case 'title':
                         {
-                          const taskSubtasks = subtasks.filter(s => (s as unknown as { taskId?: string }).taskId === task.id)
-                          const completedSubtasks = taskSubtasks.filter(s => s.status === 'COMPLETED').length
+                          const taskSubtasks = subtasks.filter(s => (s as unknown as { taskId?: string }).taskId === task.id.toString())
+                          const completedSubtasks = taskSubtasks.filter(s => {
+                            // Use template-based completion logic
+                            if (projectConfig && projectConfig.statuses.length > 0) {
+                              const maxOrder = Math.max(...projectConfig.statuses.map(st => st.order))
+                              const statusConfig = projectConfig.statuses.find(st => st.id === s.status)
+                              return statusConfig?.order === maxOrder
+                            }
+                            // Fallback to status === 'COMPLETED' if no projectConfig
+                            return s.status === 'COMPLETED'
+                          }).length
 
                           // Lógica corregida para las dos opciones del panel
                           let shouldShowSubtasks = false
@@ -1083,26 +1508,30 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
                                   <h3 className="font-semibold text-sm line-clamp-1 flex-1">
                                     {task.title}
                                   </h3>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      handleEditTask(task.id)
-                                    }}
-                                    className="p-1 rounded opacity-0 group-hover:opacity-100 transition-all duration-200 hover:bg-blue-100 hover:text-blue-600 text-gray-400 hover:scale-110 flex-shrink-0"
-                                    title="Editar tarea"
-                                  >
-                                    <Edit className="h-3 w-3" />
-                                  </button>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      handleCreateSubtask(task.id)
-                                    }}
-                                    className="p-1 rounded opacity-0 group-hover:opacity-100 transition-all duration-200 hover:bg-green-100 hover:text-green-600 text-gray-400 hover:scale-110 flex-shrink-0"
-                                    title="Añadir subtarea"
-                                  >
-                                    <Plus className="h-3 w-3" />
-                                  </button>
+                                  {canEdit && (
+                                    <>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          handleEditTask(task.id)
+                                        }}
+                                        className="p-1 rounded opacity-0 group-hover:opacity-100 transition-all duration-200 hover:bg-blue-100 hover:text-blue-600 text-gray-400 hover:scale-110 flex-shrink-0"
+                                        title="Editar tarea"
+                                      >
+                                        <Edit className="h-3 w-3" />
+                                      </button>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          handleCreateSubtask(task.id)
+                                        }}
+                                        className="p-1 rounded opacity-0 group-hover:opacity-100 transition-all duration-200 hover:bg-green-100 hover:text-green-600 text-gray-400 hover:scale-110 flex-shrink-0"
+                                        title="Añadir subtarea"
+                                      >
+                                        <Plus className="h-3 w-3" />
+                                      </button>
+                                    </>
+                                  )}
                                 </div>
                                 {taskSubtasks.length > 0 && (
                                   <div className="flex items-center gap-2 mt-1">
@@ -1127,60 +1556,129 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
                       case 'status':
                         return (
                           <div>
-                            <Select
-                              value={task.status}
-                              onValueChange={(newStatus) => {
+                            {canEdit ? (
+                              <Select
+                                value={task.status}
+                                onValueChange={async (newStatus) => {
+                                // Optimistically update UI
                                 setTasks(prev => prev.map(t =>
-                                  t.id === task.id ? { ...t, status: newStatus as unknown as TaskStatus } : t
+                                  t.id === task.id ? { ...t, status: newStatus } : t
                                 ) as unknown as Task[])
+
+                                // Call API to persist
+                                try {
+                                  const response = await fetch(`/api/tasks/${task.id}`, {
+                                    method: 'PATCH',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ status: newStatus })
+                                  })
+
+                                  if (!response.ok) {
+                                    // Revert on error
+                                    setTasks(prev => prev.map(t =>
+                                      t.id === task.id ? { ...t, status: task.status } : t
+                                    ) as unknown as Task[])
+                                    console.error('Failed to update task status')
+                                  }
+                                } catch (error) {
+                                  // Revert on error
+                                  console.error('Error updating task status:', error)
+                                  setTasks(prev => prev.map(t =>
+                                    t.id === task.id ? { ...t, status: task.status } : t
+                                  ) as unknown as Task[])
+                                }
                               }}
                             >
                               <SelectTrigger className="h-6 border-0 p-0 hover:bg-gray-100 focus:ring-0">
-                                <Badge
-                                  variant="outline"
-                                  className={`text-xs cursor-pointer ${getStatusColor(task.status)}`}
-                                >
-                                  {getStatusText(task.status)}
-                                </Badge>
+                                {(() => {
+                                  const statusConfig = projectConfig?.statuses.find(s => String(s.id) === String(task.status))
+                                  return (
+                                    <Badge
+                                      variant="outline"
+                                      className={`text-xs cursor-pointer ${statusConfig ? '' : getStatusColor(task.status)}`}
+                                      style={statusConfig ? {
+                                        borderColor: statusConfig.color,
+                                        color: statusConfig.color,
+                                        backgroundColor: `${statusConfig.color}10`
+                                      } : {}}
+                                    >
+                                      {statusConfig ? statusConfig.name : getStatusText(task.status)}
+                                    </Badge>
+                                  )
+                                })()}
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="PENDING">
-                                  <Badge
-                                    variant="outline"
-                                    className={`text-xs ${getStatusColor('PENDING')}`}
-                                  >
-                                    {getStatusText('PENDING')}
-                                  </Badge>
-                                </SelectItem>
-                                <SelectItem value="IN_PROGRESS">
-                                  <Badge
-                                    variant="outline"
-                                    className={`text-xs ${getStatusColor('IN_PROGRESS')}`}
-                                  >
-                                    {getStatusText('IN_PROGRESS')}
-                                  </Badge>
-                                </SelectItem>
-                                <SelectItem value="COMPLETED">
-                                  <Badge
-                                    variant="outline"
-                                    className={`text-xs ${getStatusColor('COMPLETED')}`}
-                                  >
-                                    {getStatusText('COMPLETED')}
-                                  </Badge>
-                                </SelectItem>
+                                {projectConfig?.statuses.map((status) => (
+                                  <SelectItem key={status.id} value={String(status.id)}>
+                                    <Badge
+                                      variant="outline"
+                                      className="text-xs"
+                                      style={{
+                                        borderColor: status.color,
+                                        color: status.color,
+                                        backgroundColor: `${status.color}10`
+                                      }}
+                                    >
+                                      {status.name}
+                                    </Badge>
+                                  </SelectItem>
+                                ))}
                               </SelectContent>
-                            </Select>
+                              </Select>
+                            ) : (
+                              (() => {
+                                const statusConfig = projectConfig?.statuses.find(s => String(s.id) === String(task.status))
+                                return (
+                                  <Badge
+                                    variant="outline"
+                                    className={`text-xs ${statusConfig ? '' : getStatusColor(task.status)}`}
+                                    style={statusConfig ? {
+                                      borderColor: statusConfig.color,
+                                      color: statusConfig.color,
+                                      backgroundColor: `${statusConfig.color}10`
+                                    } : {}}
+                                  >
+                                    {statusConfig ? statusConfig.name : getStatusText(task.status)}
+                                  </Badge>
+                                )
+                              })()
+                            )}
                           </div>
                         )
                       case 'priority':
                         return (
                           <div>
-                            <Select
-                              value={task.priority}
-                              onValueChange={(newPriority) => {
+                            {canEdit ? (
+                              <Select
+                                value={task.priority}
+                                onValueChange={async (newPriority) => {
+                                // Optimistically update UI
                                 setTasks(prev => prev.map(t =>
                                   t.id === task.id ? { ...t, priority: newPriority as unknown as TaskPriority } : t
                                 ) as unknown as Task[])
+
+                                // Call API to persist
+                                try {
+                                  const response = await fetch(`/api/tasks/${task.id}`, {
+                                    method: 'PATCH',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ priority: newPriority })
+                                  })
+
+                                  if (!response.ok) {
+                                    // Revert on error
+                                    setTasks(prev => prev.map(t =>
+                                      t.id === task.id ? { ...t, priority: task.priority } : t
+                                    ) as unknown as Task[])
+                                    console.error('Failed to update task priority')
+                                  }
+                                } catch (error) {
+                                  // Revert on error
+                                  console.error('Error updating task priority:', error)
+                                  setTasks(prev => prev.map(t =>
+                                    t.id === task.id ? { ...t, priority: task.priority } : t
+                                  ) as unknown as Task[])
+                                }
                               }}
                             >
                               <SelectTrigger className="h-6 border-0 p-0 hover:bg-gray-100 focus:ring-0">
@@ -1225,16 +1723,29 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
                                   </Badge>
                                 </SelectItem>
                               </SelectContent>
-                            </Select>
+                              </Select>
+                            ) : (
+                              <Badge
+                                variant="outline"
+                                className={`text-xs ${getPriorityColor(task.priority)}`}
+                              >
+                                {getPriorityText(task.priority)}
+                              </Badge>
+                            )}
                           </div>
                         )
                       case 'assignee':
                         return (
                           <div>
-                            <Select
-                              value={task.assigneeId || 'unassigned'}
-                              onValueChange={(newAssigneeId) => {
+                            {canEdit ? (
+                              <Select
+                                value={task.assigneeId || 'unassigned'}
+                                onValueChange={async (newAssigneeId) => {
                                 const assignee = teamMembers.find(m => m.id === newAssigneeId)
+                                const oldAssigneeId = task.assigneeId
+                                const oldAssignee = task.assignee
+
+                                // Optimistically update UI
                                 setTasks(prev => prev.map(t =>
                                   t.id === task.id
                                     ? {
@@ -1244,6 +1755,35 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
                                       } as unknown as Task
                                     : t
                                 ) as unknown as Task[])
+
+                                // Call API to persist
+                                try {
+                                  const response = await fetch(`/api/tasks/${task.id}`, {
+                                    method: 'PATCH',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                      assigneeId: newAssigneeId === 'unassigned' ? null : newAssigneeId
+                                    })
+                                  })
+
+                                  if (!response.ok) {
+                                    // Revert on error
+                                    setTasks(prev => prev.map(t =>
+                                      t.id === task.id
+                                        ? { ...t, assigneeId: oldAssigneeId, assignee: oldAssignee } as unknown as Task
+                                        : t
+                                    ) as unknown as Task[])
+                                    console.error('Failed to update task assignee')
+                                  }
+                                } catch (error) {
+                                  // Revert on error
+                                  console.error('Error updating task assignee:', error)
+                                  setTasks(prev => prev.map(t =>
+                                    t.id === task.id
+                                      ? { ...t, assigneeId: oldAssigneeId, assignee: oldAssignee } as unknown as Task
+                                      : t
+                                  ) as unknown as Task[])
+                                }
                               }}
                             >
                               <SelectTrigger className="h-6 border-0 p-0 hover:bg-gray-100 focus:ring-0 justify-start">
@@ -1270,7 +1810,15 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
                                   </SelectItem>
                                 ))}
                               </SelectContent>
-                            </Select>
+                              </Select>
+                            ) : (
+                              <div className="flex items-center gap-1 text-sm">
+                                <Users className="h-3 w-3 text-gray-400" />
+                                <span className="truncate text-xs">
+                                  {task.assignee ? task.assignee.name : 'Sin asignar'}
+                                </span>
+                              </div>
+                            )}
                           </div>
                         )
                       case 'createdBy':
@@ -1300,47 +1848,116 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
                       case 'dueDate':
                         return (
                           <div>
-                            <Popover>
-                              <PopoverTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  className="h-6 border-0 p-0 hover:bg-gray-100 focus:ring-0 justify-start"
-                                >
-                                  <div className="flex items-center gap-1 text-xs text-gray-500 cursor-pointer">
-                                    <CalendarIcon className="h-3 w-3" />
-                                    <span>{task.dueDate ? format(new Date(task.dueDate), 'dd MMM yyyy', { locale: es }) : 'Sin fecha'}</span>
-                                  </div>
-                                </Button>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-auto p-0" align="start">
-                                <Calendar
-                                  mode="single"
-                                  selected={task.dueDate ? new Date(task.dueDate) : undefined}
-                                  onSelect={(date) => {
-                                    setTasks(prev => prev.map(t =>
-                                      t.id === task.id
-                                        ? { ...t, dueDate: date ? date.toISOString().split('T')[0] : undefined } as unknown as Task
-                                        : t
-                                    ) as unknown as Task[])
-                                  }}
-                                  initialFocus
-                                />
-                                <div className="p-2 border-t">
+                            {canEdit ? (
+                              <Popover
+                                open={openCalendarTaskId === task.id}
+                                onOpenChange={(open) => setOpenCalendarTaskId(open ? task.id : null)}
+                              >
+                                <PopoverTrigger asChild>
                                   <Button
                                     variant="ghost"
-                                    size="sm"
-                                    className="w-full text-xs text-gray-500"
-                                    onClick={() => {
-                                      setTasks(prev => prev.map(t =>
-                                        t.id === task.id ? { ...t, dueDate: undefined } as unknown as Task : t
-                                      ) as unknown as Task[])
-                                    }}
+                                    className="h-6 border-0 p-0 hover:bg-gray-100 focus:ring-0 justify-start"
                                   >
-                                    Limpiar fecha
+                                    <div className="flex items-center gap-1 text-xs text-gray-500 cursor-pointer">
+                                      <CalendarIcon className="h-3 w-3" />
+                                      <span>{formatDateSafe(task.dueDate)}</span>
+                                    </div>
                                   </Button>
-                                </div>
-                              </PopoverContent>
-                            </Popover>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0" align="start">
+                                  <Calendar
+                                    mode="single"
+                                    selected={parseDate(task.dueDate)}
+                                    onSelect={async (date) => {
+                                      const oldDueDate = task.dueDate
+                                      const newDueDate = date ? dateToString(date) : undefined
+
+                                      // Close the popover
+                                      setOpenCalendarTaskId(null)
+
+                                      // Optimistically update UI
+                                      setTasks(prev => prev.map(t =>
+                                        t.id === task.id
+                                          ? { ...t, dueDate: newDueDate } as unknown as Task
+                                          : t
+                                      ) as unknown as Task[])
+
+                                      // Call API to persist
+                                      try {
+                                        const response = await fetch(`/api/tasks/${task.id}`, {
+                                          method: 'PATCH',
+                                          headers: { 'Content-Type': 'application/json' },
+                                          body: JSON.stringify({ dueDate: newDueDate || null })
+                                        })
+
+                                        if (!response.ok) {
+                                          // Revert on error
+                                          setTasks(prev => prev.map(t =>
+                                            t.id === task.id ? { ...t, dueDate: oldDueDate } as unknown as Task : t
+                                          ) as unknown as Task[])
+                                          console.error('Failed to update task due date')
+                                        }
+                                      } catch (error) {
+                                        // Revert on error
+                                        console.error('Error updating task due date:', error)
+                                        setTasks(prev => prev.map(t =>
+                                          t.id === task.id ? { ...t, dueDate: oldDueDate } as unknown as Task : t
+                                        ) as unknown as Task[])
+                                      }
+                                    }}
+                                    initialFocus
+                                  />
+                                  <div className="p-2 border-t">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="w-full text-xs text-gray-500"
+                                      onClick={async () => {
+                                        const oldDueDate = task.dueDate
+
+                                        // Close the popover
+                                        setOpenCalendarTaskId(null)
+
+                                        // Optimistically update UI
+                                        setTasks(prev => prev.map(t =>
+                                          t.id === task.id ? { ...t, dueDate: undefined } as unknown as Task : t
+                                        ) as unknown as Task[])
+
+                                        // Call API to persist
+                                        try {
+                                          const response = await fetch(`/api/tasks/${task.id}`, {
+                                            method: 'PATCH',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ dueDate: null })
+                                          })
+
+                                          if (!response.ok) {
+                                            // Revert on error
+                                            setTasks(prev => prev.map(t =>
+                                              t.id === task.id ? { ...t, dueDate: oldDueDate } as unknown as Task : t
+                                            ) as unknown as Task[])
+                                            console.error('Failed to clear task due date')
+                                          }
+                                        } catch (error) {
+                                          // Revert on error
+                                          console.error('Error clearing task due date:', error)
+                                          setTasks(prev => prev.map(t =>
+                                            t.id === task.id ? { ...t, dueDate: oldDueDate } as unknown as Task : t
+                                          ) as unknown as Task[])
+                                        }
+                                      }}
+                                    >
+                                      Limpiar fecha
+                                    </Button>
+                                  </div>
+                                </PopoverContent>
+                              </Popover>
+                            ) : (
+                              <div className="flex items-center gap-1 text-xs text-gray-500">
+                                <CalendarIcon className="h-3 w-3" />
+                                <span>{formatDateSafe(task.dueDate)}</span>
+                              </div>
+                            )}
                           </div>
                         )
                       case 'description':
@@ -1358,6 +1975,13 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
 
                   const renderSubtaskRow = (subtask: Task, enabledColumns: string[], gridTemplateColumns: string) => {
                     const getSubtaskStatusColor = (status: string) => {
+                      // Try to find the status in project config first
+                      const statusConfig = projectConfig?.statuses.find(s => s.id === status)
+                      if (statusConfig) {
+                        // Return empty string to let inline styles handle the color
+                        return ''
+                      }
+                      // Fallback for legacy statuses
                       switch (status) {
                         case 'COMPLETED': return 'bg-green-100 text-green-800'
                         case 'IN_PROGRESS': return 'bg-blue-100 text-blue-800'
@@ -1367,6 +1991,12 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
                     }
 
                     const getSubtaskStatusText = (status: string) => {
+                      // Try to find the status in project config first
+                      const statusConfig = projectConfig?.statuses.find(s => s.id === status)
+                      if (statusConfig) {
+                        return statusConfig.name
+                      }
+                      // Fallback for legacy statuses
                       switch (status) {
                         case 'COMPLETED': return 'Completada'
                         case 'IN_PROGRESS': return 'En Progreso'
@@ -1377,207 +2007,303 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
 
                     const renderSubtaskColumnContent = (subtask: Task, columnId: string) => {
                       switch (columnId) {
-                        case 'title':
+                                              case 'title':
+                        {
+                          // Check if subtask is completed using project config
+                          const isSubtaskCompleted = (() => {
+                            if (projectConfig && projectConfig.statuses.length > 0) {
+                              const maxOrder = Math.max(...projectConfig.statuses.map(st => st.order))
+                              const statusConfig = projectConfig.statuses.find(st => st.id === subtask.status)
+                              return statusConfig?.order === maxOrder
+                            }
+                            return subtask.status === 'COMPLETED'
+                          })()
+
                           return (
                             <div className="flex items-center gap-2 ml-8">
-                              {subtask.status === 'COMPLETED' ? (
-                                <CheckCircle2 className="h-4 w-4 text-green-600 flex-shrink-0" />
-                              ) : (
-                                <Circle className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                              )}
-                              <div className="flex-1 min-w-0 flex items-center gap-2">
-                                <span className={`text-sm flex-1 ${
-                                  subtask.status === 'COMPLETED' ? 'line-through text-gray-500' : 'text-gray-700'
-                                }`}>
-                                  {subtask.title}
-                                </span>
+                              {canEdit ? (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation()
-                                    handleEditTask(subtask.id)
+                                    // Toggle between first and last status
+                                    if (projectConfig && projectConfig.statuses.length > 0) {
+                                      const sortedStatuses = [...projectConfig.statuses].sort((a, b) => a.order - b.order)
+                                      const newStatus = isSubtaskCompleted
+                                        ? sortedStatuses[0].id // Move to first status
+                                        : sortedStatuses[sortedStatuses.length - 1].id // Move to last status
+                                      handleSubtaskUpdate(subtask.id, 'status', newStatus)
+                                    } else {
+                                      // Fallback for non-configured projects
+                                      const newStatus = subtask.status === 'COMPLETED' ? 'PENDING' : 'COMPLETED'
+                                      handleSubtaskUpdate(subtask.id, 'status', newStatus)
+                                    }
                                   }}
-                                  className="p-1 rounded opacity-0 group-hover:opacity-100 transition-all duration-200 hover:bg-blue-100 hover:text-blue-600 text-gray-400 hover:scale-110 flex-shrink-0"
-                                  title="Editar subtarea"
+                                  className="hover:scale-110 transition-transform cursor-pointer"
+                                  title={isSubtaskCompleted ? "Marcar como no completada" : "Marcar como completada"}
                                 >
-                                  <Edit className="h-3 w-3" />
+                                  {isSubtaskCompleted ? (
+                                    <CheckCircle2 className="h-4 w-4 text-green-600 flex-shrink-0" />
+                                  ) : (
+                                    <Circle className="h-4 w-4 text-gray-400 flex-shrink-0 hover:text-gray-600" />
+                                  )}
                                 </button>
+                              ) : (
+                                <>
+                                  {isSubtaskCompleted ? (
+                                    <CheckCircle2 className="h-4 w-4 text-green-600 flex-shrink-0" />
+                                  ) : (
+                                    <Circle className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                                  )}
+                                </>
+                              )}
+                              <div className="flex-1 min-w-0 flex items-center gap-2">
+                                <span className={`text-sm flex-1 ${
+                                  isSubtaskCompleted ? 'line-through text-gray-500' : 'text-gray-700'
+                                }`}>
+                                  {subtask.title}
+                                </span>
+                                {canEdit && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      handleEditTask(subtask.id)
+                                    }}
+                                    className="p-1 rounded opacity-0 group-hover:opacity-100 transition-all duration-200 hover:bg-blue-100 hover:text-blue-600 text-gray-400 hover:scale-110 flex-shrink-0"
+                                    title="Editar subtarea"
+                                  >
+                                    <Edit className="h-3 w-3" />
+                                  </button>
+                                )}
                               </div>
                             </div>
                           )
+                        }
                         case 'status':
                           return (
                             <div>
-                              <Select
-                                value={subtask.status}
-                                onValueChange={(newStatus) => {
-                                  handleSubtaskUpdate(subtask.id, 'status', newStatus)
-                                }}
-                              >
-                                <SelectTrigger className="h-6 border-0 p-0 hover:bg-gray-100 focus:ring-0">
-                                  <Badge
-                                    variant="outline"
-                                    className={`text-xs cursor-pointer ${getSubtaskStatusColor(subtask.status)}`}
-                                  >
-                                    {getSubtaskStatusText(subtask.status)}
-                                  </Badge>
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="PENDING">
+                              {canEdit ? (
+                                <Select
+                                  value={subtask.status}
+                                  onValueChange={(newStatus) => {
+                                    handleSubtaskUpdate(subtask.id, 'status', newStatus)
+                                  }}
+                                >
+                                  <SelectTrigger className="h-6 border-0 p-0 hover:bg-gray-100 focus:ring-0">
+                                    {(() => {
+                                      const statusConfig = projectConfig?.statuses.find(s => String(s.id) === String(subtask.status))
+                                      return (
+                                        <Badge
+                                          variant="outline"
+                                          className={`text-xs cursor-pointer ${statusConfig ? '' : getSubtaskStatusColor(subtask.status)}`}
+                                          style={statusConfig ? {
+                                            borderColor: statusConfig.color,
+                                            color: statusConfig.color,
+                                            backgroundColor: `${statusConfig.color}10`
+                                          } : {}}
+                                        >
+                                          {statusConfig ? statusConfig.name : getSubtaskStatusText(subtask.status)}
+                                        </Badge>
+                                      )
+                                    })()}
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {projectConfig?.statuses.map((status) => (
+                                      <SelectItem key={status.id} value={String(status.id)}>
+                                        <Badge
+                                          variant="outline"
+                                          className="text-xs"
+                                          style={{
+                                            borderColor: status.color,
+                                            color: status.color,
+                                            backgroundColor: `${status.color}10`
+                                          }}
+                                        >
+                                          {status.name}
+                                        </Badge>
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                (() => {
+                                  const statusConfig = projectConfig?.statuses.find(s => String(s.id) === String(subtask.status))
+                                  return (
                                     <Badge
                                       variant="outline"
-                                      className={`text-xs ${getSubtaskStatusColor('PENDING')}`}
+                                      className={`text-xs ${statusConfig ? '' : getSubtaskStatusColor(subtask.status)}`}
+                                      style={statusConfig ? {
+                                        borderColor: statusConfig.color,
+                                        color: statusConfig.color,
+                                        backgroundColor: `${statusConfig.color}10`
+                                      } : {}}
                                     >
-                                      {getSubtaskStatusText('PENDING')}
+                                      {statusConfig ? statusConfig.name : getSubtaskStatusText(subtask.status)}
                                     </Badge>
-                                  </SelectItem>
-                                  <SelectItem value="IN_PROGRESS">
-                                    <Badge
-                                      variant="outline"
-                                      className={`text-xs ${getSubtaskStatusColor('IN_PROGRESS')}`}
-                                    >
-                                      {getSubtaskStatusText('IN_PROGRESS')}
-                                    </Badge>
-                                  </SelectItem>
-                                  <SelectItem value="COMPLETED">
-                                    <Badge
-                                      variant="outline"
-                                      className={`text-xs ${getSubtaskStatusColor('COMPLETED')}`}
-                                    >
-                                      {getSubtaskStatusText('COMPLETED')}
-                                    </Badge>
-                                  </SelectItem>
-                                </SelectContent>
-                              </Select>
+                                  )
+                                })()
+                              )}
                             </div>
                           )
                         case 'priority':
                           return (
                             <div>
-                              <Select
-                                value={subtask.priority || 'MEDIUM'}
-                                onValueChange={(newPriority) => {
-                                  handleSubtaskUpdate(subtask.id, 'priority', newPriority)
-                                }}
-                              >
-                                <SelectTrigger className="h-6 border-0 p-0 hover:bg-gray-100 focus:ring-0">
-                                  <Badge
-                                    variant="outline"
-                                    className={`text-xs cursor-pointer ${getPriorityColor(subtask.priority || 'MEDIUM')}`}
-                                  >
-                                    {getPriorityText(subtask.priority || 'MEDIUM')}
-                                  </Badge>
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="LOW">
+                              {canEdit ? (
+                                <Select
+                                  value={subtask.priority || 'MEDIUM'}
+                                  onValueChange={(newPriority) => {
+                                    handleSubtaskUpdate(subtask.id, 'priority', newPriority)
+                                  }}
+                                >
+                                  <SelectTrigger className="h-6 border-0 p-0 hover:bg-gray-100 focus:ring-0">
                                     <Badge
                                       variant="outline"
-                                      className={`text-xs ${getPriorityColor('LOW')}`}
+                                      className={`text-xs cursor-pointer ${getPriorityColor(subtask.priority || 'MEDIUM')}`}
                                     >
-                                      {getPriorityText('LOW')}
+                                      {getPriorityText(subtask.priority || 'MEDIUM')}
                                     </Badge>
-                                  </SelectItem>
-                                  <SelectItem value="MEDIUM">
-                                    <Badge
-                                      variant="outline"
-                                      className={`text-xs ${getPriorityColor('MEDIUM')}`}
-                                    >
-                                      {getPriorityText('MEDIUM')}
-                                    </Badge>
-                                  </SelectItem>
-                                  <SelectItem value="HIGH">
-                                    <Badge
-                                      variant="outline"
-                                      className={`text-xs ${getPriorityColor('HIGH')}`}
-                                    >
-                                      {getPriorityText('HIGH')}
-                                    </Badge>
-                                  </SelectItem>
-                                  <SelectItem value="URGENT">
-                                    <Badge
-                                      variant="outline"
-                                      className={`text-xs ${getPriorityColor('URGENT')}`}
-                                    >
-                                      {getPriorityText('URGENT')}
-                                    </Badge>
-                                  </SelectItem>
-                                </SelectContent>
-                              </Select>
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="LOW">
+                                      <Badge
+                                        variant="outline"
+                                        className={`text-xs ${getPriorityColor('LOW')}`}
+                                      >
+                                        {getPriorityText('LOW')}
+                                      </Badge>
+                                    </SelectItem>
+                                    <SelectItem value="MEDIUM">
+                                      <Badge
+                                        variant="outline"
+                                        className={`text-xs ${getPriorityColor('MEDIUM')}`}
+                                      >
+                                        {getPriorityText('MEDIUM')}
+                                      </Badge>
+                                    </SelectItem>
+                                    <SelectItem value="HIGH">
+                                      <Badge
+                                        variant="outline"
+                                        className={`text-xs ${getPriorityColor('HIGH')}`}
+                                      >
+                                        {getPriorityText('HIGH')}
+                                      </Badge>
+                                    </SelectItem>
+                                    <SelectItem value="URGENT">
+                                      <Badge
+                                        variant="outline"
+                                        className={`text-xs ${getPriorityColor('URGENT')}`}
+                                      >
+                                        {getPriorityText('URGENT')}
+                                      </Badge>
+                                    </SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                <Badge
+                                  variant="outline"
+                                  className={`text-xs ${getPriorityColor(subtask.priority || 'MEDIUM')}`}
+                                >
+                                  {getPriorityText(subtask.priority || 'MEDIUM')}
+                                </Badge>
+                              )}
                             </div>
                           )
                         case 'assignee':
                           return (
                             <div>
-                              <Select
-                                value={subtask.assigneeId || 'unassigned'}
-                                onValueChange={(newAssigneeId) => {
-                                  handleSubtaskUpdate(subtask.id, 'assignee', newAssigneeId)
-                                }}
-                              >
-                                <SelectTrigger className="h-6 border-0 p-0 hover:bg-gray-100 focus:ring-0 justify-start">
-                                  <div className="flex items-center gap-1 text-sm">
-                                    <Users className="h-3 w-3 text-gray-400" />
-                                    <span className="truncate text-xs">
-                                      {subtask.assignee ? subtask.assignee.name : 'Sin asignar'}
-                                    </span>
-                                  </div>
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="unassigned">
-                                    <div className="flex items-center gap-1">
+                              {canEdit ? (
+                                <Select
+                                  value={subtask.assigneeId || 'unassigned'}
+                                  onValueChange={(newAssigneeId) => {
+                                    handleSubtaskUpdate(subtask.id, 'assignee', newAssigneeId)
+                                  }}
+                                >
+                                  <SelectTrigger className="h-6 border-0 p-0 hover:bg-gray-100 focus:ring-0 justify-start">
+                                    <div className="flex items-center gap-1 text-sm">
                                       <Users className="h-3 w-3 text-gray-400" />
-                                      <span className="text-xs">Sin asignar</span>
+                                      <span className="truncate text-xs">
+                                        {subtask.assignee ? subtask.assignee.name : 'Sin asignar'}
+                                      </span>
                                     </div>
-                                  </SelectItem>
-                                  {teamMembers.map((member) => (
-                                    <SelectItem key={member.id} value={member.id}>
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="unassigned">
                                       <div className="flex items-center gap-1">
                                         <Users className="h-3 w-3 text-gray-400" />
-                                        <span className="text-xs">{(member as unknown as User).name || (member as unknown as User).email}</span>
+                                        <span className="text-xs">Sin asignar</span>
                                       </div>
                                     </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                                    {teamMembers.map((member) => (
+                                      <SelectItem key={member.id} value={member.id}>
+                                        <div className="flex items-center gap-1">
+                                          <Users className="h-3 w-3 text-gray-400" />
+                                          <span className="text-xs">{(member as unknown as User).name || (member as unknown as User).email}</span>
+                                        </div>
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                <div className="flex items-center gap-1 text-sm">
+                                  <Users className="h-3 w-3 text-gray-400" />
+                                  <span className="truncate text-xs">
+                                    {subtask.assignee ? subtask.assignee.name : 'Sin asignar'}
+                                  </span>
+                                </div>
+                              )}
                             </div>
                           )
                         case 'dueDate':
                           return (
                             <div>
-                              <Popover>
-                                <PopoverTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    className="h-6 border-0 p-0 hover:bg-gray-100 focus:ring-0 justify-start"
-                                  >
-                                    <div className="flex items-center gap-1 text-xs text-gray-500 cursor-pointer">
-                                      <CalendarIcon className="h-3 w-3" />
-                                      <span>{subtask.dueDate ? format(new Date(subtask.dueDate), 'dd MMM yyyy', { locale: es }) : 'Sin fecha'}</span>
-                                    </div>
-                                  </Button>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-auto p-0" align="start">
-                                  <Calendar
-                                    mode="single"
-                                    selected={subtask.dueDate ? new Date(subtask.dueDate) : undefined}
-                                    onSelect={(date) => {
-                                      handleSubtaskUpdate(subtask.id, 'dueDate', date || null)
-                                    }}
-                                    initialFocus
-                                  />
-                                  <div className="p-2 border-t">
+                              {canEdit ? (
+                                <Popover
+                                  open={openCalendarSubtaskId === subtask.id}
+                                  onOpenChange={(open) => setOpenCalendarSubtaskId(open ? subtask.id : null)}
+                                >
+                                  <PopoverTrigger asChild>
                                     <Button
                                       variant="ghost"
-                                      size="sm"
-                                      className="w-full text-xs text-gray-500"
-                                      onClick={() => {
-                                        handleSubtaskUpdate(subtask.id, 'dueDate', null)
-                                      }}
+                                      className="h-6 border-0 p-0 hover:bg-gray-100 focus:ring-0 justify-start"
                                     >
-                                      Limpiar fecha
+                                      <div className="flex items-center gap-1 text-xs text-gray-500 cursor-pointer">
+                                        <CalendarIcon className="h-3 w-3" />
+                                        <span>{formatDateSafe(subtask.dueDate)}</span>
+                                      </div>
                                     </Button>
-                                  </div>
-                                </PopoverContent>
-                              </Popover>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-auto p-0" align="start">
+                                    <Calendar
+                                      mode="single"
+                                      selected={parseDate(subtask.dueDate)}
+                                      onSelect={(date) => {
+                                        // Close the popover
+                                        setOpenCalendarSubtaskId(null)
+                                        handleSubtaskUpdate(subtask.id, 'dueDate', date || null)
+                                      }}
+                                      initialFocus
+                                    />
+                                    <div className="p-2 border-t">
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="w-full text-xs text-gray-500"
+                                        onClick={() => {
+                                          // Close the popover
+                                          setOpenCalendarSubtaskId(null)
+                                          handleSubtaskUpdate(subtask.id, 'dueDate', null)
+                                        }}
+                                      >
+                                        Limpiar fecha
+                                      </Button>
+                                    </div>
+                                  </PopoverContent>
+                                </Popover>
+                              ) : (
+                                <div className="flex items-center gap-1 text-xs text-gray-500">
+                                  <CalendarIcon className="h-3 w-3" />
+                                  <span>{formatDateSafe(subtask.dueDate)}</span>
+                                </div>
+                              )}
                             </div>
                           )
                         case 'createdBy':
@@ -1617,13 +2343,23 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
                       }
                     }
 
+                    // Check if subtask is overdue
+                    const isSubtaskOverdue = subtask.dueDate && (() => {
+                      const dueDate = new Date(subtask.dueDate)
+                      const today = new Date()
+                      today.setHours(23, 59, 59, 999) // End of today
+                      return dueDate < today
+                    })()
+
                     return (
                       <div
                         key={`subtask-${subtask.id}`}
-                        className="group grid gap-4 p-2 items-center bg-gray-50/50 hover:bg-blue-50 cursor-pointer transition-colors border-l-2 border-blue-200"
+                        className={`group grid gap-4 p-2 items-center bg-gray-50/50 hover:bg-blue-50 ${canEdit ? 'cursor-pointer' : 'cursor-default'} transition-colors border-l-2 border-blue-200 ${
+                          showOverdueTasks && isSubtaskOverdue ? 'bg-red-50' : ''
+                        }`}
                         style={{gridTemplateColumns}}
-                        onDoubleClick={() => handleEditTask(subtask.id)}
-                        title="Doble clic para editar subtarea"
+                        onDoubleClick={() => canEdit && handleEditTask(subtask.id)}
+                        title={canEdit ? "Doble clic para editar subtarea" : ""}
                       >
                         {enabledColumns.map(column => (
                           <div key={column}>
@@ -1634,17 +2370,69 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
                     )
                   }
 
+                  // Filter tasks by search query
+                  const getFilteredTasks = () => {
+                    let filtered = tasks
+
+                    // Helper function to check if a task matches the filter criteria
+                    const taskMatchesFilters = (task: Task) => {
+                      // Check search query
+                      if (searchQuery.trim()) {
+                        const query = searchQuery.toLowerCase()
+                        const matchesSearch =
+                          task.title.toLowerCase().includes(query) ||
+                          task.description?.toLowerCase().includes(query) ||
+                          task.assignee?.name?.toLowerCase().includes(query)
+                        if (!matchesSearch) return false
+                      }
+
+                      // Check status filter
+                      if (taskFilters.status.length > 0) {
+                        if (!taskFilters.status.includes(task.status)) return false
+                      }
+
+                      // Check priority filter
+                      if (taskFilters.priority.length > 0) {
+                        if (!taskFilters.priority.includes(task.priority)) return false
+                      }
+
+                      // Check assignee filter
+                      if (taskFilters.assignee.length > 0) {
+                        if (!task.assigneeId || !taskFilters.assignee.includes(task.assigneeId.toString())) return false
+                      }
+
+                      return true
+                    }
+
+                    // Filter tasks considering subtasks
+                    filtered = tasks.filter(task => {
+                      // Check if the parent task itself matches the filters
+                      if (taskMatchesFilters(task)) {
+                        return true
+                      }
+
+                      // Check if any subtask matches the filters
+                      const taskSubtasks = subtasks.filter(st => (st as any).taskId === task.id.toString())
+                      const hasMatchingSubtask = taskSubtasks.some(subtask => taskMatchesFilters(subtask))
+
+                      return hasMatchingSubtask
+                    })
+
+                    return filtered
+                  }
+
                   // Group tasks based on groupBy setting
                   const getGroupedTasks = () => {
+                    const filteredTasks = getFilteredTasks()
                     const groupBy = projectConfig?.gridGroupBy || 'none'
 
                     if (groupBy === 'none') {
-                      return [{ group: '', tasks: tasks }]
+                      return [{ group: '', tasks: filteredTasks }]
                     }
 
                     const grouped: Record<string, Task[]> = {}
 
-                    tasks.forEach(task => {
+                    filteredTasks.forEach(task => {
                       let groupKey = ''
 
                       switch (groupBy) {
@@ -1723,7 +2511,7 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
                               {/* Group Rows */}
                               <div className="border border-gray-200 rounded-b-lg">
                                 {group.tasks.map((task, index) => {
-                                  const taskSubtasks = subtasks.filter(s => (s as unknown as { taskId?: string }).taskId === task.id)
+                                  const taskSubtasks = subtasks.filter(s => (s as unknown as { taskId?: string }).taskId === task.id.toString())
 
                                   // Lógica corregida para las dos opciones del panel (misma que arriba)
                                   let shouldShowSubtasks = false
@@ -1737,16 +2525,26 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
 
                                   const isLastTask = index === group.tasks.length - 1
 
+                                  // Check if task is overdue
+                                  const isTaskOverdue = task.dueDate && (() => {
+                                    const dueDate = new Date(task.dueDate)
+                                    const today = new Date()
+                                    today.setHours(23, 59, 59, 999) // End of today
+                                    return dueDate < today
+                                  })()
+
                                   return (
                                     <React.Fragment key={task.id}>
                                       {/* Main Task Row */}
                                       <div
-                                        className={`group grid gap-4 p-3 items-center hover:bg-blue-50 cursor-pointer transition-colors ${
+                                        className={`group grid gap-4 p-3 items-center hover:bg-blue-50 ${canEdit ? 'cursor-pointer' : 'cursor-default'} transition-colors ${
                                           !isLastTask || shouldShowSubtasks ? 'border-b border-gray-100' : ''
+                                        } ${
+                                          showOverdueTasks && isTaskOverdue ? 'bg-red-50' : ''
                                         }`}
                                         style={{gridTemplateColumns}}
-                                        onDoubleClick={() => handleEditTask(task.id)}
-                                        title="Doble clic para editar tarea"
+                                        onDoubleClick={() => canEdit && handleEditTask(task.id)}
+                                        title={canEdit ? "Doble clic para editar tarea" : ""}
                                       >
                                         {enabledColumns.map(column => (
                                           <div key={column.id}>
@@ -1760,7 +2558,7 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
                                         <>
                                           {taskSubtasks.map((subtask, subtaskIndex) => (
                                             <React.Fragment key={subtask.id}>
-                                              {renderSubtaskRow(subtask, enabledColumns as unknown as string[], gridTemplateColumns)}
+                                              {renderSubtaskRow(subtask, enabledColumns.map(col => col.id), gridTemplateColumns)}
                                             </React.Fragment>
                                           ))}
                                           {/* Add border after subtasks if not the last task */}
@@ -1782,8 +2580,8 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
                 })()}
               </div>
             </div>
-          ) : (
-            // Kanban View
+          ) : viewMode === 'kanban' ? (
+            // Kanban View (Status Columns)
             <DndContext
               sensors={sensors}
               collisionDetection={closestCorners}
@@ -1793,16 +2591,124 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
               <div className="overflow-x-auto">
                 <div className="flex gap-4 pb-4" style={{ minWidth: 'max-content' }}>
                 {columnConfig.map((column) => (
-                  <DroppableColumn key={column.id} column={column} />
+                  <DroppableColumn
+                    key={column.id}
+                    column={column}
+                    teamMembers={teamMembers}
+                    onTaskUpdate={handleTaskUpdateFromCard}
+                    formatDate={formatDate}
+                    getPriorityColor={getPriorityColor}
+                    getPriorityText={getPriorityText}
+                    canEdit={canEdit}
+                  />
                 ))}
                 </div>
               </div>
 
               <DragOverlay>
-                {activeTask && <DraggableTaskCard task={activeTask} />}
+                {activeTask && (
+                  <DraggableTaskCard
+                    task={activeTask}
+                    teamMembers={teamMembers}
+                    onTaskUpdate={handleTaskUpdateFromCard}
+                    formatDate={formatDate}
+                    getPriorityColor={getPriorityColor}
+                    getPriorityText={getPriorityText}
+                    canEdit={canEdit}
+                    highlightOverdue={showOverdueTasks}
+                  />
+                )}
               </DragOverlay>
             </DndContext>
-          )}
+          ) : (
+            // Sprints View (Sprint Columns)
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCorners}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+            >
+              <div className="mb-4">
+                <div className="flex items-center gap-2 text-sm text-gray-600 bg-blue-50 p-3 rounded-lg">
+                  <Target className="h-4 w-4 text-blue-600" />
+                  <span>
+                    Arrastra las tareas entre sprints para reorganizar tu planificación. Las tareas sin sprint aparecen en "Backlog".
+                  </span>
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <div className="flex gap-4 pb-4" style={{ minWidth: 'max-content' }}>
+                  {/* Backlog Column */}
+                  <DroppableBacklogColumn
+                    tasks={tasks.filter(t => !t.sprintId)}
+                    teamMembers={teamMembers}
+                    onTaskUpdate={handleTaskUpdateFromCard}
+                    formatDate={formatDate}
+                    getPriorityColor={getPriorityColor}
+                    getPriorityText={getPriorityText}
+                    canEdit={canEdit}
+                  />
+
+                  {/* Sprint Columns */}
+                  {sprints.map((sprint) => {
+                    const sprintTasks = tasks.filter(t => t.sprintId === sprint.id.toString())
+                    return (
+                      <DroppableSprintColumn
+                        key={sprint.id}
+                        sprint={sprint}
+                        tasks={sprintTasks}
+                        teamMembers={teamMembers}
+                        onTaskUpdate={handleTaskUpdateFromCard}
+                        formatDate={formatDate}
+                        getPriorityColor={getPriorityColor}
+                        getPriorityText={getPriorityText}
+                        canEdit={canEdit}
+                      />
+                    )
+                  })}
+
+                  {/* Create Sprint Prompt */}
+                  {sprints.length === 0 && (
+                    <div className="rounded-lg border-2 border-dashed border-gray-300 min-h-[500px] w-80 flex-shrink-0 flex items-center justify-center">
+                      <div className="text-center p-6">
+                        <Target className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                        <h3 className="font-medium text-gray-900 mb-2">
+                          No hay sprints creados
+                        </h3>
+                        <p className="text-sm text-gray-500 mb-4">
+                          Crea tu primer sprint en la pestaña de Sprints
+                        </p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setActiveTab('sprints')}
+                        >
+                          <Plus className="mr-2 h-4 w-4" />
+                          Ir a Sprints
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <DragOverlay>
+                {activeTask && (
+                  <DraggableTaskCard
+                    task={activeTask}
+                    teamMembers={teamMembers}
+                    onTaskUpdate={handleTaskUpdateFromCard}
+                    formatDate={formatDate}
+                    getPriorityColor={getPriorityColor}
+                    getPriorityText={getPriorityText}
+                    canEdit={canEdit}
+                    highlightOverdue={showOverdueTasks}
+                  />
+                )}
+              </DragOverlay>
+            </DndContext>
+          )
+          }
         </CardContent>
       </Card>
 
@@ -1868,6 +2774,58 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
                 className="col-span-3"
               />
             </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="sprint" className="text-right">
+                Sprint
+              </Label>
+              <Select
+                value={newTaskForm.sprintId || 'no-sprint'}
+                onValueChange={(value) => handleFormChange('sprintId', value === 'no-sprint' ? '' : value)}
+              >
+                <SelectTrigger className="col-span-3">
+                  <SelectValue placeholder="Selecciona un sprint" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="no-sprint">Sin sprint</SelectItem>
+                  {sprints
+                    .filter((sprint: any) => sprint.status === 'PLANNING' || sprint.status === 'ACTIVE')
+                    .map((sprint: any) => (
+                      <SelectItem key={sprint.id} value={sprint.id.toString()}>
+                        {sprint.name} ({sprint.status === 'ACTIVE' ? 'activo' : 'planificación'})
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="epic" className="text-right">
+                Épica
+              </Label>
+              <Select
+                value={newTaskForm.epicId || 'no-epic'}
+                onValueChange={(value) => handleFormChange('epicId', value === 'no-epic' ? '' : value)}
+              >
+                <SelectTrigger className="col-span-3">
+                  <SelectValue placeholder="Selecciona una épica" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="no-epic">Sin épica</SelectItem>
+                  {epics.map((epic) => (
+                    <SelectItem key={epic.id} value={epic.id}>
+                      <div className="flex items-center gap-2">
+                        {epic.color && (
+                          <div
+                            className="w-3 h-3 rounded-full"
+                            style={{ backgroundColor: epic.color }}
+                          />
+                        )}
+                        <span>{epic.name}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsNewTaskModalOpen(false)}>
@@ -1884,6 +2842,7 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
       <ManageProjectMembersModal
         projectId={projectId!}
         projectName={project.name}
+        spaceId={project.spaceId}
         open={showManageMembersModal}
         onOpenChange={setShowManageMembersModal}
         onMembersUpdated={() => {
@@ -1910,8 +2869,46 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
         open={showEditTaskModal}
         onOpenChange={setShowEditTaskModal}
         onTaskUpdated={handleTaskUpdated as any}
+        statuses={projectConfig?.statuses || []}
+        isSubtask={(taskToEdit as any)?.isSubtask || false}
+        onEditSubtask={(subtask: any) => {
+          // Convert subtask to task format and open edit modal
+          setTaskToEdit({
+            ...subtask,
+            isSubtask: true
+          } as any)
+          setShowEditTaskModal(true)
+        }}
       />
       {/* eslint-enable @typescript-eslint/no-explicit-any */}
+
+      {/* Add Subtask Modal */}
+      {parentTaskForSubtask && (
+        <AddSubtaskModal
+          open={showAddSubtaskModal}
+          onOpenChange={setShowAddSubtaskModal}
+          taskId={parentTaskForSubtask.id}
+          taskTitle={parentTaskForSubtask.title}
+          onSubtaskAdded={handleSubtaskAdded}
+        />
+      )}
+
+      {/* Create/Edit Sprint Modal */}
+      <CreateSprintModal
+        open={showCreateSprintModal}
+        onOpenChange={handleCloseSprintModal}
+        projectId={parseInt(projectId || '0')}
+        onSprintCreated={handleSprintCreated}
+        sprint={sprintToEdit}
+      />
+
+      {/* Configuration Side Panel Overlay */}
+      {showConfigPanel && (
+        <div
+          className="fixed inset-0 bg-gray-900/20 backdrop-blur-[2px] z-20 transition-all duration-300"
+          onClick={() => setShowConfigPanel(false)}
+        />
+      )}
 
       {/* Configuration Side Panel */}
       <div className={`fixed inset-y-0 right-0 z-30 w-80 bg-white border-l border-gray-200 shadow-2xl transform transition-transform duration-300 ${
@@ -2018,32 +3015,6 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
             </div>
           </div>
 
-          {/* Mostrar Subtareas */}
-          <div>
-            <h3 className="font-medium text-black mb-3 flex items-center gap-2">
-              <List className="h-4 w-4 text-gray-700" />
-              Vista de Subtareas
-            </h3>
-            <div className="space-y-3">
-
-              <div className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50">
-                <div>
-                  <span className="text-sm font-medium text-black">Expandir por defecto</span>
-                  <p className="text-xs text-gray-600">Mostrar subtareas expandidas al cargar la página</p>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={expandSubtasksByDefault}
-                  onChange={(e) => {
-                    setExpandSubtasksByDefault(e.target.checked)
-                    // Limpiar el estado de expansión manual cuando se cambia el comportamiento por defecto
-                    setExpandedTasks(new Set())
-                  }}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-              </div>
-            </div>
-          </div>
 
           {/* Filtros Avanzados */}
           <div>
@@ -2116,25 +3087,6 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
 
 
 
-          {/* Opciones Adicionales */}
-          <div>
-            <h3 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
-              <Zap className="h-4 w-4" />
-              Funciones Avanzadas
-            </h3>
-            <div className="space-y-3">
-              <button className="w-full text-left p-2 rounded-lg hover:bg-gray-50 text-sm text-gray-600">
-                Exportar tareas a CSV
-              </button>
-              <button className="w-full text-left p-2 rounded-lg hover:bg-gray-50 text-sm text-gray-600">
-                Plantillas de tareas
-              </button>
-              <button className="w-full text-left p-2 rounded-lg hover:bg-gray-50 text-sm text-gray-600">
-                Configurar notificaciones
-              </button>
-            </div>
-          </div>
-
           {/* Reset Button */}
           <div className="pt-4 border-t border-gray-200">
             <Button
@@ -2163,62 +3115,39 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
       </div>
 
       {/* Edit Project Modal */}
-      <Dialog open={showEditProjectModal} onOpenChange={setShowEditProjectModal}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>Editar Proyecto</DialogTitle>
-            <DialogDescription>
-              Modifica la información básica del proyecto.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="project-name">Nombre del proyecto</Label>
-              <Input
-                id="project-name"
-                value={editProjectData.name}
-                onChange={(e) => setEditProjectData({
-                  ...editProjectData,
-                  name: e.target.value
-                })}
-                placeholder="Nombre del proyecto"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="project-description">Descripción</Label>
-              <Textarea
-                id="project-description"
-                value={editProjectData.description}
-                onChange={(e) => setEditProjectData({
-                  ...editProjectData,
-                  description: e.target.value
-                })}
-                placeholder="Descripción del proyecto"
-                rows={3}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowEditProjectModal(false)}
-            >
-              Cancelar
-            </Button>
-            <Button
-              onClick={() => {
-                // Aquí se actualizarían los datos del proyecto
-                // Por ahora solo cerramos el modal
-                console.log('Actualizando proyecto:', editProjectData)
-                setShowEditProjectModal(false)
-              }}
-            >
-              Guardar cambios
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {project && projectConfig && (() => {
+        // Calculate correct completed tasks based on template final state
+        const maxOrder = projectConfig.statuses.length > 0
+          ? Math.max(...projectConfig.statuses.map(s => s.order))
+          : -1
 
+        const completedTasks = tasks.filter(task => {
+          const statusConfig = projectConfig.statuses.find(s => s.id === task.status)
+          return statusConfig?.order === maxOrder
+        }).length
+
+        const totalTasks = tasks.length
+        const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0
+
+        return (
+          <EditProjectModal
+            project={{
+              ...project,
+              totalTasks,
+              completedTasks,
+              progress
+            } as any}
+            open={showEditProjectModal}
+            onOpenChange={setShowEditProjectModal}
+            onProjectUpdated={async (updatedProject) => {
+              setProject(updatedProject as any)
+              await fetchProjectDetails()
+            }}
+          />
+        )
+      })()}
+
+      <ConfirmationDialog />
     </MainLayout>
   )
 }

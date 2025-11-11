@@ -2,14 +2,15 @@
 
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
+import { useSession } from 'next-auth/react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { MainLayout } from '@/components/layout/main-layout'
-import { getMockProjectById, getMockTasksByProjectId, MOCK_SPRINTS, MOCK_USER } from '@/lib/mock-data'
 import { Project, Task, Sprint, TaskPriority } from '@/types'
+import { toast } from 'sonner'
 import {
   ArrowLeft,
   Filter,
@@ -34,48 +35,55 @@ export default async function ProjectKanbanPage({ params }: KanbanPageProps) {
 }
 
 function KanbanPageClient({ projectId }: { projectId: string }) {
-  // Use mock user for demo
-  const session = { user: MOCK_USER }
   const router = useRouter()
+  const { data: session } = useSession()
   const [project, setProject] = useState<Project | null>(null)
   const [tasks, setTasks] = useState<Task[]>([])
   const [sprints, setSprints] = useState<Sprint[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [sprintFilter, setSprintFilter] = useState<string>('all')
 
-  // Remove auth redirect - using mock data
+  // Session is guaranteed by middleware, but add safety check
+  if (!session) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+      </div>
+    )
+  }
 
   useEffect(() => {
-    fetchData()
-  }, [projectId])
+    if (session) {
+      fetchData()
+    }
+  }, [projectId, session])
 
   const fetchData = async () => {
     try {
       setIsLoading(true)
 
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 500))
-
-      // Get project by ID from mock data
-      const projectData = getMockProjectById(projectId)
-
-      if (!projectData) {
+      // Fetch project data
+      const projectRes = await fetch(`/api/projects/${projectId}`)
+      if (!projectRes.ok) {
         router.push('/projects')
         return
       }
+      const projectData = await projectRes.json()
+      setProject(projectData)
 
-      setProject(projectData as unknown as Project)
+      // Fetch tasks for this project
+      const tasksRes = await fetch(`/api/projects/${projectId}/tasks`)
+      if (tasksRes.ok) {
+        const tasksData = await tasksRes.json()
+        setTasks(tasksData)
+      }
 
-      // Get tasks for this project
-      const projectTasks = getMockTasksByProjectId(projectId)
-      setTasks(projectTasks as unknown as Task[])
-
-      // Get sprints for this project
-      const projectSprints = MOCK_SPRINTS.filter(sprint =>
-        sprint.projectId === projectId ||
-        sprint.name.toLowerCase().includes(projectData.name.toLowerCase().split(' ')[0])
-      )
-      setSprints(projectSprints as unknown as Sprint[])
+      // Fetch sprints for this project
+      const sprintsRes = await fetch(`/api/projects/${projectId}/sprints`)
+      if (sprintsRes.ok) {
+        const sprintsData = await sprintsRes.json()
+        setSprints(sprintsData)
+      }
     } catch (error) {
       console.error('Error fetching data:', error)
     } finally {
@@ -85,15 +93,29 @@ function KanbanPageClient({ projectId }: { projectId: string }) {
 
   const handlePriorityChange = async (taskId: string, newPriority: string) => {
     try {
-      // TODO: Implement API call to update task priority
-      console.log('Updating task priority:', taskId, newPriority)
+      const response = await fetch(`/api/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          priority: newPriority,
+        }),
+      })
 
-      // Update local state
-      setTasks(prev => prev.map(task =>
-        task.id === taskId ? { ...task, priority: newPriority as unknown as TaskPriority } : task
-      ) as unknown as Task[])
+      if (response.ok) {
+        toast.success('Prioridad actualizada')
+        // Update local state
+        setTasks(prev => prev.map(task =>
+          task.id === taskId ? { ...task, priority: newPriority as unknown as TaskPriority } : task
+        ) as unknown as Task[])
+      } else {
+        console.error('Failed to update task priority')
+        toast.error('Error al actualizar la prioridad de la tarea.')
+      }
     } catch (error) {
       console.error('Error updating task priority:', error)
+      toast.error('Error al actualizar la prioridad de la tarea.')
     }
   }
 
@@ -134,12 +156,9 @@ function KanbanPageClient({ projectId }: { projectId: string }) {
   }
 
   const getTaskSprint = (taskId: string) => {
-    for (const sprint of sprints) {
-      if (sprint.tasks.some((t: Task) => t.id === taskId)) {
-        return sprint
-      }
-    }
-    return null
+    const task = tasks.find(t => t.id === taskId)
+    if (!task || !task.sprintId) return null
+    return sprints.find(s => s.id === task.sprintId) || null
   }
 
   if (isLoading) {
@@ -158,13 +177,9 @@ function KanbanPageClient({ projectId }: { projectId: string }) {
   let filteredTasks = tasks
   if (sprintFilter !== 'all') {
     if (sprintFilter === 'unassigned') {
-      filteredTasks = tasks.filter(task => !getTaskSprint(task.id))
+      filteredTasks = tasks.filter(task => !task.sprintId)
     } else {
-      const selectedSprint = sprints.find(s => s.id === sprintFilter)
-      if (selectedSprint) {
-        const sprintTaskIds = selectedSprint.tasks.map((t: Task) => t.id)
-        filteredTasks = tasks.filter(task => sprintTaskIds.includes(task.id))
-      }
+      filteredTasks = tasks.filter(task => task.sprintId === sprintFilter)
     }
   }
 

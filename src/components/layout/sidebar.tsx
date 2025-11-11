@@ -2,10 +2,10 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { MOCK_USER } from '@/lib/mock-data'
+import { useSession } from 'next-auth/react'
 import { cn } from '@/lib/utils'
+import Image from 'next/image'
 import {
-  Building2,
   Home,
   FolderOpen,
   Users,
@@ -14,7 +14,8 @@ import {
   Target,
   Layers,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  FileText
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -25,7 +26,14 @@ interface SidebarProps {
 
 export function Sidebar({ className, collapsed = false, onToggleCollapse }: SidebarProps) {
   const pathname = usePathname()
-  const session = { user: MOCK_USER } // Use mock user instead of real session
+  const { data: session } = useSession()
+
+  // Don't render sidebar if session is not loaded
+  if (!session?.user) {
+    return null
+  }
+
+  const isAdmin = session?.user?.role === 'ADMIN'
 
   const navigation = [
     {
@@ -47,16 +55,10 @@ export function Sidebar({ className, collapsed = false, onToggleCollapse }: Side
       current: pathname.startsWith('/projects')
     },
     {
-      name: 'Equipo',
-      href: '/team',
-      icon: Users,
-      current: pathname === '/team'
-    },
-    {
-      name: 'Reportes',
-      href: '/reports',
-      icon: BarChart3,
-      current: pathname === '/reports'
+      name: 'Plantillas',
+      href: '/templates',
+      icon: FileText,
+      current: pathname.startsWith('/templates')
     },
     {
       name: 'Notificaciones',
@@ -64,7 +66,23 @@ export function Sidebar({ className, collapsed = false, onToggleCollapse }: Side
       icon: Bell,
       current: pathname === '/notifications'
     }
+    // {
+    //   name: 'Reportes',
+    //   href: '/reports',
+    //   icon: BarChart3,
+    //   current: pathname === '/reports'
+    // }
   ]
+
+  // Add "Equipo" only for admins
+  if (isAdmin) {
+    navigation.push({
+      name: 'Equipo',
+      href: '/team',
+      icon: Users,
+      current: pathname === '/team'
+    })
+  }
 
   // Always show sidebar for demo - no auth check needed
 
@@ -80,9 +98,15 @@ export function Sidebar({ className, collapsed = false, onToggleCollapse }: Side
       )}>
         {!collapsed ? (
           <>
-            <div className="flex items-center">
-              <Building2 className="h-8 w-8 text-blue-600 flex-shrink-0" />
-              <span className="ml-2 text-xl font-bold text-gray-900">Lilab Ops v1.2</span>
+            <div className="flex items-center gap-2">
+              <Image
+                src="/atalaya.png"
+                alt="Atlas Logo"
+                width={32}
+                height={32}
+                className="flex-shrink-0"
+              />
+              <span className="text-xl font-bold text-gray-900">Atlas</span>
             </div>
 
             {/* Toggle Button - Expanded */}
@@ -96,7 +120,12 @@ export function Sidebar({ className, collapsed = false, onToggleCollapse }: Side
           </>
         ) : (
           <div className="flex flex-col items-center w-full space-y-1">
-            <Building2 className="h-6 w-6 text-blue-600" />
+            <Image
+              src="/atalaya.png"
+              alt="Atlas Logo"
+              width={28}
+              height={28}
+            />
             {/* Toggle Button - Collapsed */}
             <button
               onClick={() => onToggleCollapse?.(!collapsed)}

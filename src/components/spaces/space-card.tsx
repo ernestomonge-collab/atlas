@@ -3,6 +3,7 @@
 import React from 'react'
 import Link from 'next/link'
 import { useState } from 'react'
+import { useSession } from 'next-auth/react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -19,28 +20,22 @@ import { EditSpaceModal } from './edit-space-modal'
 import { AddMemberModal } from './add-member-modal'
 
 interface SpaceCardProps {
-  space: Space & {
-    projects: Array<{
-      id: string
-      name: string
-      totalTasks: number
-      completedTasks: number
-      progress: number
-    }>
-    analytics: {
-      totalProjects: number
-      totalTasks: number
-      completedTasks: number
-      inProgressTasks: number
-      pendingTasks: number
-      overallProgress: number
-    }
-  }
+  space: Space
+  onDuplicate?: () => void
+  onDelete?: () => void
+  onSpaceUpdated?: () => void
 }
 
-export function SpaceCard({ space }: SpaceCardProps) {
+export function SpaceCard({ space, onDuplicate, onDelete, onSpaceUpdated }: SpaceCardProps) {
+  const { data: session } = useSession()
   const [showEditModal, setShowEditModal] = useState(false)
   const [showMembersModal, setShowMembersModal] = useState(false)
+
+  // Check if current user is owner or admin of this space
+  const isSpaceOwnerOrAdmin = space.members?.some(
+    member => member.userId === parseInt(session?.user?.id || '0') &&
+              (member.role === 'OWNER' || member.role === 'ADMIN')
+  )
 
   // Dynamically get Lucide icon
   const IconComponent = LucideIcons[space.icon as keyof typeof LucideIcons] || LucideIcons.Folder
@@ -66,7 +61,7 @@ export function SpaceCard({ space }: SpaceCardProps) {
 
   const handleSpaceUpdated = (updatedSpace: Space) => {
     console.log('Space updated:', updatedSpace)
-    // TODO: Update space in parent component or refresh data
+    onSpaceUpdated?.()
   }
 
   const handleMemberAdded = (newMember: SpaceMember) => {
@@ -98,11 +93,18 @@ export function SpaceCard({ space }: SpaceCardProps) {
               })}
             </div>
             <div className="flex-1 min-w-0">
-              <CardTitle className="text-lg line-clamp-1 group-hover:text-blue-600 transition-colors">
-                <Link href={`/spaces/${space.id}`}>
-                  {space.name}
-                </Link>
-              </CardTitle>
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-lg line-clamp-1 group-hover:text-blue-600 transition-colors">
+                  <Link href={`/spaces/${space.id}`}>
+                    {space.name}
+                  </Link>
+                </CardTitle>
+                {space.isPublic ? (
+                  <LucideIcons.Globe className="h-3.5 w-3.5 text-green-600 flex-shrink-0" title="Espacio público" />
+                ) : (
+                  <LucideIcons.Lock className="h-3.5 w-3.5 text-orange-600 flex-shrink-0" title="Espacio privado" />
+                )}
+              </div>
               {space.description && (
                 <CardDescription className="mt-1 line-clamp-2">
                   {space.description}
@@ -111,9 +113,6 @@ export function SpaceCard({ space }: SpaceCardProps) {
             </div>
           </div>
           <div className="flex items-center space-x-2">
-            <Badge variant="secondary">
-              {space.analytics.totalProjects} {space.analytics.totalProjects === 1 ? 'project' : 'projects'}
-            </Badge>
             <DropdownMenu>
               <DropdownMenuTrigger asChild data-dropdown-trigger>
                 <Button
@@ -126,19 +125,42 @@ export function SpaceCard({ space }: SpaceCardProps) {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem onClick={handleEdit}>
-                  <LucideIcons.Edit className="mr-2 h-4 w-4" />
-                  Editar espacio
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleMembers}>
-                  <LucideIcons.Users className="mr-2 h-4 w-4" />
-                  Gestionar miembros
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem className="text-red-600">
-                  <LucideIcons.Trash2 className="mr-2 h-4 w-4" />
-                  Eliminar espacio
-                </DropdownMenuItem>
+                {isSpaceOwnerOrAdmin && (
+                  <>
+                    <DropdownMenuItem
+                      onClick={handleEdit}
+                    >
+                      <LucideIcons.Edit className="mr-2 h-4 w-4" />
+                      Editar espacio
+                    </DropdownMenuItem>
+                    {onDuplicate && (
+                      <DropdownMenuItem
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          onDuplicate()
+                        }}
+                      >
+                        <LucideIcons.Copy className="mr-2 h-4 w-4" />
+                        Duplicar espacio
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuSeparator />
+                    {onDelete && (
+                      <DropdownMenuItem
+                        className="text-red-600"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          onDelete()
+                        }}
+                      >
+                        <LucideIcons.Trash2 className="mr-2 h-4 w-4" />
+                        Eliminar espacio
+                      </DropdownMenuItem>
+                    )}
+                  </>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -146,28 +168,47 @@ export function SpaceCard({ space }: SpaceCardProps) {
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
-          {/* Projects List Preview */}
-          {space.projects.length > 0 && (
-            <div className="pt-3 border-t border-gray-100">
-              <div className="text-xs text-gray-500 mb-2">Recent Projects:</div>
-              <div className="space-y-1">
-                {space.projects.slice(0, 3).map((project) => (
-                  <Link
-                    key={project.id}
-                    href={`/projects/${project.id}`}
-                    className="block text-xs text-gray-600 hover:text-blue-600 transition-colors line-clamp-1"
-                  >
-                    • {project.name}
-                  </Link>
-                ))}
-                {space.projects.length > 3 && (
-                  <div className="text-xs text-gray-400">
-                    +{space.projects.length - 3} more projects
-                  </div>
-                )}
+          {/* Space Stats */}
+          <div className="grid grid-cols-2 gap-4 text-center py-2">
+            <div>
+              <div className="text-2xl font-bold text-blue-600">
+                {space._count?.projects || 0}
               </div>
+              <div className="text-xs text-gray-500">Proyectos</div>
             </div>
-          )}
+            <div>
+              <div className="text-2xl font-bold text-gray-600">
+                {space._count?.members || 0}
+              </div>
+              <div className="text-xs text-gray-500">Miembros</div>
+            </div>
+          </div>
+
+          {/* Space Admin */}
+          {(() => {
+            // First try to find OWNER
+            const owner = space.members?.find(member => member.role === 'OWNER')
+            const admin = owner || space.members?.find(member => member.role === 'ADMIN')
+            const user = admin?.user
+
+            return user ? (
+              <div className="pt-3 border-t">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                    <span className="text-sm font-medium text-green-700">
+                      {user.name?.charAt(0) || user.email?.charAt(0)}
+                    </span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-green-700 truncate">
+                      {user.name || user.email}
+                    </p>
+                    <p className="text-xs text-gray-500">Administrador</p>
+                  </div>
+                </div>
+              </div>
+            ) : null
+          })()}
         </div>
       </CardContent>
 
@@ -184,6 +225,8 @@ export function SpaceCard({ space }: SpaceCardProps) {
         onOpenChange={setShowMembersModal}
         onMemberAdded={handleMemberAdded}
         spaceName={space.name}
+        spaceId={space.id.toString()}
+        existingMembers={space.members || []}
       />
     </Card>
   )

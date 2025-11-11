@@ -47,9 +47,9 @@ export const DEFAULT_STATUSES: Record<string, ProjectStatus[]> = {
     { id: 'approved', name: 'Aprobado', color: 'bg-green-100 text-green-800', order: 4 }
   ],
   'General': [
-    { id: 'pending', name: 'Por Hacer', color: 'bg-gray-100 text-gray-800', order: 0 },
-    { id: 'in_progress', name: 'En Progreso', color: 'bg-blue-100 text-blue-800', order: 1 },
-    { id: 'completed', name: 'Completado', color: 'bg-green-100 text-green-800', order: 2 }
+    { id: 'PENDING', name: 'Por Hacer', color: 'bg-gray-100 text-gray-800', order: 0 },
+    { id: 'IN_PROGRESS', name: 'En Progreso', color: 'bg-blue-100 text-blue-800', order: 1 },
+    { id: 'COMPLETED', name: 'Completado', color: 'bg-green-100 text-green-800', order: 2 }
   ]
 }
 
@@ -80,11 +80,43 @@ export const PROJECT_TYPES = [
   'General'
 ]
 
+export interface TemplateState {
+  id: number
+  name: string
+  color: string
+  order: number
+  isDefault: boolean
+}
+
 export function getDefaultProjectConfig(projectId: string, projectType: string = 'General'): ProjectConfig {
   return {
     id: `config-${projectId}`,
     projectId,
     statuses: DEFAULT_STATUSES[projectType] || DEFAULT_STATUSES['General'],
+    gridColumns: DEFAULT_GRID_COLUMNS,
+    kanbanLayout: 'status',
+    gridGroupBy: 'none',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  }
+}
+
+export function getProjectConfigFromTemplate(
+  projectId: string,
+  templateStates: TemplateState[]
+): ProjectConfig {
+  // Convert template states to ProjectStatus format
+  const statuses: ProjectStatus[] = templateStates.map(state => ({
+    id: state.name.toUpperCase().replace(/\s+/g, '_'), // Convert "Por Hacer" to "POR_HACER"
+    name: state.name,
+    color: state.color,
+    order: state.order
+  }))
+
+  return {
+    id: `config-${projectId}`,
+    projectId,
+    statuses,
     gridColumns: DEFAULT_GRID_COLUMNS,
     kanbanLayout: 'status',
     gridGroupBy: 'none',

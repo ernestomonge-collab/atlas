@@ -11,49 +11,112 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
-import { MOCK_NOTIFICATIONS } from '@/lib/mock-data'
 import { Bell, Check, CheckCheck, X, AlertTriangle, Info, CheckCircle, XCircle } from 'lucide-react'
-import { NotificationType, Notification } from '@/types'
+
+interface Notification {
+  id: number
+  userId: number
+  title: string
+  message: string | null
+  type: string
+  link: string | null
+  isRead: boolean
+  createdAt: string
+}
 
 export function NotificationDropdown() {
   const [notifications, setNotifications] = useState<Notification[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+  const [isLoading, setIsLoading] = useState(false)
   const [isOpen, setIsOpen] = useState(false)
 
+  // Fetch notifications on mount and setup polling
   useEffect(() => {
-    // Load mock notifications for demo
-    const loadNotifications = async () => {
-      setIsLoading(true)
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 300))
-      setNotifications(MOCK_NOTIFICATIONS as Notification[])
-      setIsLoading(false)
-    }
+    // Initial fetch
+    fetchNotifications()
 
-    loadNotifications()
+    // Setup polling every 30 seconds
+    const intervalId = setInterval(() => {
+      fetchNotifications()
+    }, 30000) // 30 seconds
+
+    // Cleanup interval on unmount
+    return () => clearInterval(intervalId)
   }, [])
+
+  // Refresh when dropdown opens (with loading indicator)
+  useEffect(() => {
+    if (isOpen) {
+      fetchNotifications(true)
+    }
+  }, [isOpen])
+
+  const fetchNotifications = async (showLoading = false) => {
+    if (showLoading) {
+      setIsLoading(true)
+    }
+    try {
+      const response = await fetch('/api/notifications')
+      if (response.ok) {
+        const data = await response.json()
+        setNotifications(data)
+      }
+    } catch (error) {
+      console.error('Failed to fetch notifications:', error)
+    } finally {
+      if (showLoading) {
+        setIsLoading(false)
+      }
+    }
+  }
 
   const unreadCount = notifications.filter(n => !n.isRead).length
 
-  const markAsRead = async (notificationId: string) => {
-    setNotifications(prev =>
-      prev.map(n => n.id === notificationId ? { ...n, isRead: true } : n)
-    )
+  const markAsRead = async (notificationId: number) => {
+    try {
+      const response = await fetch(`/api/notifications/${notificationId}/read`, {
+        method: 'PATCH',
+      })
+      if (response.ok) {
+        setNotifications(prev =>
+          prev.map(n => n.id === notificationId ? { ...n, isRead: true } : n)
+        )
+      }
+    } catch (error) {
+      console.error('Failed to mark notification as read:', error)
+    }
   }
 
   const markAllAsRead = async () => {
-    setNotifications(prev =>
-      prev.map(n => ({ ...n, isRead: true }))
-    )
+    try {
+      const response = await fetch('/api/notifications/read-all', {
+        method: 'PATCH',
+      })
+      if (response.ok) {
+        setNotifications(prev =>
+          prev.map(n => ({ ...n, isRead: true }))
+        )
+      }
+    } catch (error) {
+      console.error('Failed to mark all notifications as read:', error)
+    }
   }
 
-  const deleteNotification = async (notificationId: string) => {
-    setNotifications(prev =>
-      prev.filter(n => n.id !== notificationId)
-    )
+  const deleteNotification = async (notificationId: number) => {
+    try {
+      const response = await fetch(`/api/notifications/${notificationId}`, {
+        method: 'DELETE',
+      })
+      if (response.ok) {
+        setNotifications(prev =>
+          prev.filter(n => n.id !== notificationId)
+        )
+      }
+    } catch (error) {
+      console.error('Failed to delete notification:', error)
+    }
   }
 
-  const getNotificationIcon = (type: NotificationType) => {
+  const getNotificationIcon = (type: string) => {
     switch (type) {
       case 'SUCCESS':
         return <CheckCircle className="h-4 w-4 text-green-600" />
@@ -74,15 +137,6 @@ export function NotificationDropdown() {
     }
   }
 
-  const getNotificationLink = (notification: Notification) => {
-    if (notification.task) {
-      return `/projects/${notification.task.projectId || 'unknown'}/tasks/${notification.task.id}`
-    }
-    if (notification.project) {
-      return `/projects/${notification.project.id}`
-    }
-    return '#'
-  }
 
   const formatDate = (dateString: string | Date) => {
     const date = typeof dateString === 'string' ? new Date(dateString) : dateString
@@ -204,12 +258,10 @@ export function NotificationDropdown() {
                         <span className="text-xs text-gray-500">
                           {formatDate(notification.createdAt)}
                         </span>
-                        {(notification.task || notification.project) && (
+                        {notification.link && (
                           <Link
-                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                            href={getNotificationLink(notification as any)}
-                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                            onClick={() => handleNotificationClick(notification as any)}
+                            href={notification.link}
+                            onClick={() => handleNotificationClick(notification)}
                             className="text-xs text-blue-600 hover:text-blue-800 font-medium"
                           >
                             Ver detalles

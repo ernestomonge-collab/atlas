@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import { SessionProvider } from "@/components/providers/session-provider";
+import { Toaster } from "sonner";
 import "./globals.css";
 
 const inter = Inter({
@@ -8,7 +10,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Lilab Ops v1.2 - Project Management",
+  title: "Atlas - Project Management",
   description: "Internal project management system for efficient team collaboration",
 };
 
@@ -18,9 +20,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className={`${inter.variable} font-sans antialiased`}>
-        {children}
+    <html lang="en" suppressHydrationWarning>
+      <body className={`${inter.variable} font-sans antialiased`} suppressHydrationWarning>
+        <SessionProvider>
+          {children}
+        </SessionProvider>
+        <Toaster position="top-right" richColors />
       </body>
     </html>
   );

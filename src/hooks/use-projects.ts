@@ -1,67 +1,87 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { MOCK_PROJECTS } from '@/lib/mock-data'
 
 export interface Project {
-  id: string
+  id: number
   name: string
-  description?: string
+  description?: string | null
   createdAt: string
   updatedAt: string
-  organizationId: string
+  organizationId: number
+  spaceId: number | null
   totalTasks: number
   completedTasks: number
   progress: number
   _count: {
     tasks: number
+    members: number
+    sprints: number
+    epics: number
+  }
+  space?: {
+    id: number
+    name: string
+    color: string
+    icon: string
+    isPublic: boolean
   }
 }
 
-export function useProjects() {
+export function useProjects(spaceId?: number) {
   const [projects, setProjects] = useState<Project[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const fetchProjects = async () => {
     try {
-      // Simulate API call delay for realistic demo
-      await new Promise(resolve => setTimeout(resolve, 800))
+      setIsLoading(true)
+      const url = spaceId
+        ? `/api/projects?spaceId=${spaceId}`
+        : '/api/projects'
 
-      // Use mock data instead of API call
-      const data = MOCK_PROJECTS.map(project => ({
-        ...project,
-        _count: { tasks: project.totalTasks }
-      }))
+      const response = await fetch(url)
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch projects')
+      }
+
+      const data = await response.json()
       setProjects(data)
+      setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred')
+      console.error('Error fetching projects:', err)
     } finally {
       setIsLoading(false)
     }
   }
 
-  const createProject = async (data: { name: string; description?: string }) => {
+  const createProject = async (data: {
+    name: string
+    description?: string
+    spaceId: number
+  }) => {
     try {
       setError(null)
 
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 500))
+      const response = await fetch(`/api/spaces/${data.spaceId}/projects`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: data.name,
+          description: data.description
+        }),
+      })
 
-      // Create new project with mock data structure
-      const newProject = {
-        id: `project-${Date.now()}`,
-        name: data.name,
-        description: data.description,
-        organizationId: 'org-1',
-        totalTasks: 0,
-        completedTasks: 0,
-        progress: 0,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        _count: { tasks: 0 }
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to create project')
       }
 
+      const newProject = await response.json()
       setProjects(prev => [newProject, ...prev])
       return newProject
     } catch (err) {
@@ -72,13 +92,17 @@ export function useProjects() {
   }
 
   const refreshProjects = () => {
-    setIsLoading(true)
     fetchProjects()
   }
 
   useEffect(() => {
     fetchProjects()
-  }, [])
+
+    // Cleanup function to prevent unnecessary refetches
+    return () => {
+      // Cleanup if needed
+    }
+  }, [spaceId]) // spaceId is properly in dependency array
 
   return {
     projects,

@@ -18,6 +18,7 @@ import {
   GridColumn,
   AVAILABLE_GRID_COLUMNS
 } from '@/lib/project-config'
+import { toast } from 'sonner'
 import {
   Settings,
   GripVertical,
@@ -80,22 +81,24 @@ export function ProjectConfigModal({
     }
   }
 
-  const handleSaveConfig = async () => {
+  const handleSaveConfig = () => {
     if (!config) return
 
     try {
-      // Mock API call to save configuration
-      await new Promise(resolve => setTimeout(resolve, 500))
-
       const updatedConfig = {
         ...config,
         updatedAt: new Date().toISOString()
       }
 
+      // Save to localStorage for persistence across sessions
+      localStorage.setItem(`project-config-${projectId}`, JSON.stringify(updatedConfig))
+
+      toast.success('Configuración guardada exitosamente')
       onConfigUpdated(updatedConfig)
       onOpenChange(false)
     } catch (error) {
       console.error('Failed to save configuration:', error)
+      toast.error('Error al guardar la configuración')
     }
   }
 

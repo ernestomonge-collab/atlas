@@ -1,4 +1,4 @@
-# Lilab Ops - Internal Project Management System
+# Atlas - Internal Project Management System
 
 A modern, efficient project management system built specifically for internal team workflows. This MVP implementation includes user authentication, organization management, and the foundation for project and task management.
 
@@ -45,7 +45,7 @@ A modern, efficient project management system built specifically for internal te
 ### 1. Clone and Install
 ```bash
 git clone <repository-url>
-cd lilab-ops
+cd atlas
 npm install
 ```
 
@@ -56,7 +56,7 @@ cp .env.example .env.local
 
 Edit `.env.local` with your database credentials:
 ```env
-DATABASE_URL="postgresql://username:password@localhost:5432/lilab_ops_dev"
+DATABASE_URL="postgresql://username:password@localhost:5432/atlas_dev"
 NEXTAUTH_SECRET="your-secret-key-here"
 NEXTAUTH_URL="http://localhost:3000"
 ```

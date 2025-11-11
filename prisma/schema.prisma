@@ -12,7 +12,7 @@ datasource db {
 
 // Authentication & Users
 model Organization {
-  id        String   @id @default(cuid())
+  id        Int      @id @default(autoincrement())
   name      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -21,12 +21,13 @@ model Organization {
   spaces      Space[]
   projects    Project[]
   invitations Invitation[]
+  templates   ProjectTemplate[]
 
   @@map("organizations")
 }
 
 model User {
-  id           String   @id @default(cuid())
+  id           Int      @id @default(autoincrement())
   email        String   @unique
   name         String?
   passwordHash String?
@@ -34,8 +35,8 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId Int?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   // Relations
   assignedTasks Task[]       @relation("TaskAssignee")
@@ -46,6 +47,9 @@ model User {
   notifications Notification[]
   spaceMemberships SpaceMember[]
   projectMemberships ProjectMember[]
+  auditLogs     AuditLog[]
+  createdTemplates ProjectTemplate[]
+  productivity  MemberProductivity[]
 
   // NextAuth
   accounts Account[]
@@ -62,8 +66,8 @@ enum UserRole {
 
 // NextAuth required tables
 model Account {
-  id                String  @id @default(cuid())
-  userId            String
+  id                Int     @id @default(autoincrement())
+  userId            Int
   type              String
   provider          String
   providerAccountId String
@@ -82,27 +86,43 @@ model Account {
 }
 
 model Session {
-  id           String   @id @default(cuid())
+  id           Int      @id @default(autoincrement())
   sessionToken String   @unique
-  userId       String
+  userId       Int
   expires      DateTime
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("sessions")
 }
 
+model PasswordResetToken {
+  id        Int      @id @default(autoincrement())
+  token     String   @unique @default(cuid())
+  email     String
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([email])
+  @@map("password_reset_tokens")
+}
+
 // Core Entities
 model Space {
-  id          String   @id @default(cuid())
+  id          Int      @id @default(autoincrement())
   name        String
   description String?
   color       String?  @default("#3B82F6") // Corporate blue default
   icon        String?  @default("folder")  // Lucide icon name
+  isPublic    Boolean  @default(true)      // Public spaces are visible to all users
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId Int?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  templateId Int?
+  template   ProjectTemplate? @relation("SpaceTemplate", fields: [templateId], references: [id], onDelete: SetNull)
 
   projects      Project[]
   members       SpaceMember[]
@@ -111,40 +131,51 @@ model Space {
 }
 
 model Project {
-  id          String   @id @default(cuid())
+  id          Int      @id @default(autoincrement())
   name        String
   description String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId Int?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  spaceId String
+  spaceId Int
   space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
 
+  templateId Int?
+  template   ProjectTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  epics         Epic[]
   sprints       Sprint[]
   tasks         Task[]
   notifications Notification[]
   members       ProjectMember[]
+  productivity  MemberProductivity[]
 
+  @@index([organizationId])
+  @@index([spaceId])
   @@map("projects")
 }
 
 model Sprint {
-  id        String       @id @default(cuid())
+  id        Int          @id @default(autoincrement())
   name      String
+  goal      String?
   startDate DateTime?
   endDate   DateTime?
   status    SprintStatus @default(PLANNING)
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
-  projectId String
+  projectId Int
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
-  tasks Task[]
+  tasks   Task[]
+  metrics SprintMetric[]
 
+  @@index([projectId])
+  @@index([status])
   @@map("sprints")
 }
 
@@ -154,39 +185,78 @@ enum SprintStatus {
   COMPLETED
 }
 
+model Epic {
+  id          Int         @id @default(autoincrement())
+  name        String
+  description String?
+  color       String?     @default("#8B5CF6") // Purple by default
+  status      EpicStatus  @default(IN_PROGRESS)
+  startDate   DateTime?
+  targetDate  DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  projectId Int
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  tasks Task[]
+
+  @@index([projectId])
+  @@index([status])
+  @@map("epics")
+}
+
+enum EpicStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+  CANCELLED
+}
+
 model Task {
-  id          String       @id @default(cuid())
+  id          Int          @id @default(autoincrement())
   title       String
   description String?
-  status      TaskStatus   @default(PENDING)
+  status      String       @default("PENDING")
   priority    TaskPriority @default(MEDIUM)
   dueDate     DateTime?
+  order       Int          @default(0) // For ordering subtasks
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
-  projectId String
+  projectId Int
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
-  sprintId String?
+  sprintId Int?
   sprint   Sprint? @relation(fields: [sprintId], references: [id])
 
-  assigneeId String?
+  epicId Int?
+  epic   Epic?   @relation(fields: [epicId], references: [id])
+
+  assigneeId Int?
   assignee   User?   @relation("TaskAssignee", fields: [assigneeId], references: [id])
 
-  createdById String
+  createdById Int
   createdBy   User   @relation("TaskCreator", fields: [createdById], references: [id])
+
+  // Self-referential relationship for subtasks
+  parentTaskId Int?
+  parentTask   Task?  @relation("TaskHierarchy", fields: [parentTaskId], references: [id], onDelete: Cascade)
+  subtasks     Task[] @relation("TaskHierarchy")
 
   comments      Comment[]
   attachments   Attachment[]
   notifications Notification[]
+  auditLogs     AuditLog[]
 
+  @@index([projectId])
+  @@index([projectId, parentTaskId])
+  @@index([sprintId])
+  @@index([epicId])
+  @@index([assigneeId])
+  @@index([status])
+  @@index([priority])
   @@map("tasks")
-}
-
-enum TaskStatus {
-  PENDING
-  IN_PROGRESS
-  COMPLETED
 }
 
 enum TaskPriority {
@@ -197,50 +267,71 @@ enum TaskPriority {
 }
 
 model Comment {
-  id        String   @id @default(cuid())
+  id        Int      @id @default(autoincrement())
   content   String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  taskId String
-  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskId Int
+  task   Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("comments")
 }
 
 model Attachment {
-  id       String @id @default(cuid())
+  id       Int    @id @default(autoincrement())
   filename String
   url      String
   size     Int?
   mimeType String?
   createdAt DateTime @default(now())
 
-  taskId String
-  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskId Int
+  task   Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
-  uploadedById String
-  uploadedBy   User   @relation(fields: [uploadedById], references: [id])
+  uploadedById Int
+  uploadedBy   User @relation(fields: [uploadedById], references: [id])
 
   @@map("attachments")
 }
 
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  action    String   // e.g., "created", "updated", "status_changed", "assigned"
+  field     String?  // Field that was changed (if applicable)
+  oldValue  String?  // Previous value
+  newValue  String?  // New value
+  details   String?  // Additional context
+  createdAt DateTime @default(now())
+
+  taskId Int?
+  task   Task? @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
+
 model ProjectMember {
-  id        String         @id @default(cuid())
+  id        Int            @id @default(autoincrement())
   role      ProjectRole    @default(MEMBER)
   joinedAt  DateTime       @default(now())
   updatedAt DateTime       @updatedAt
 
-  projectId String
+  projectId Int
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
-  userId String
+  userId Int
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([projectId, userId])
+  @@index([projectId])
+  @@index([userId])
   @@map("project_members")
 }
 
@@ -252,15 +343,15 @@ enum ProjectRole {
 }
 
 model SpaceMember {
-  id        String         @id @default(cuid())
+  id        Int            @id @default(autoincrement())
   role      SpaceRole      @default(MEMBER)
   joinedAt  DateTime       @default(now())
   updatedAt DateTime       @updatedAt
 
-  spaceId String
+  spaceId Int
   space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
 
-  userId String
+  userId Int
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([spaceId, userId])
@@ -275,7 +366,7 @@ enum SpaceRole {
 }
 
 model Invitation {
-  id        String           @id @default(cuid())
+  id        Int              @id @default(autoincrement())
   email     String
   role      UserRole         @default(MEMBER)
   status    InvitationStatus @default(PENDING)
@@ -284,10 +375,10 @@ model Invitation {
   createdAt DateTime         @default(now())
   updatedAt DateTime         @updatedAt
 
-  organizationId String
+  organizationId Int
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  invitedById String
+  invitedById Int
   invitedBy   User   @relation("UserInvitations", fields: [invitedById], references: [id])
 
   @@unique([email, organizationId])
@@ -302,20 +393,21 @@ enum InvitationStatus {
 }
 
 model Notification {
-  id        String           @id @default(cuid())
+  id        Int              @id @default(autoincrement())
   title     String
   message   String
   type      NotificationType @default(INFO)
   isRead    Boolean          @default(false)
+  link      String?
   createdAt DateTime         @default(now())
 
-  userId String
+  userId Int
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Optional references to related entities
-  taskId    String?
+  taskId    Int?
   task      Task?    @relation(fields: [taskId], references: [id])
-  projectId String?
+  projectId Int?
   project   Project? @relation(fields: [projectId], references: [id])
 
   @@map("notifications")
@@ -330,4 +422,91 @@ enum NotificationType {
   TASK_UPDATED
   PROJECT_UPDATED
   COMMENT_ADDED
+}
+
+// Project Templates
+model ProjectTemplate {
+  id          Int              @id @default(autoincrement())
+  name        String
+  description String?
+  category    TemplateCategory @default(GENERAL)
+  icon        String?          @default("Folder")
+  color       String?          @default("#6B7280")
+  isDefault   Boolean          @default(false) // System templates vs custom
+  usageCount  Int              @default(0)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  organizationId Int?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  createdById Int?
+  createdBy   User? @relation(fields: [createdById], references: [id])
+
+  states   TemplateState[]
+  projects Project[]
+  spaces   Space[]       @relation("SpaceTemplate")
+
+  @@map("project_templates")
+}
+
+model TemplateState {
+  id        Int     @id @default(autoincrement())
+  name      String
+  color     String  @default("#9CA3AF")
+  order     Int     @default(0)
+  isDefault Boolean @default(false)
+
+  templateId Int
+  template   ProjectTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@map("template_states")
+}
+
+enum TemplateCategory {
+  DESARROLLO_SOFTWARE
+  MARKETING
+  DISENO
+  VENTAS
+  OPERACIONES
+  RECURSOS_HUMANOS
+  GENERAL
+  PERSONALIZADO
+}
+
+// Sprint Tracking for Burndown/Velocity charts
+model SprintMetric {
+  id              Int      @id @default(autoincrement())
+  date            DateTime
+  plannedTasks    Int      @default(0)
+  completedTasks  Int      @default(0)
+  remainingTasks  Int      @default(0)
+  idealRemaining  Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  sprintId Int
+  sprint   Sprint @relation(fields: [sprintId], references: [id], onDelete: Cascade)
+
+  @@unique([sprintId, date])
+  @@map("sprint_metrics")
+}
+
+// Member Productivity Tracking
+model MemberProductivity {
+  id                Int      @id @default(autoincrement())
+  date              DateTime @default(now())
+  tasksCompleted    Int      @default(0)
+  tasksInProgress   Int      @default(0)
+  tasksPending      Int      @default(0)
+  productivityScore Int      @default(0) // 0-100
+  createdAt         DateTime @default(now())
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  projectId Int?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, projectId, date])
+  @@map("member_productivity")
 }

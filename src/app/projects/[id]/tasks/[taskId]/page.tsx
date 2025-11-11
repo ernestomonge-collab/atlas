@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
+import { useSession } from 'next-auth/react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -11,10 +12,14 @@ import { TaskDetailView } from '@/components/tasks/task-detail-view'
 import { TaskComments } from '@/components/tasks/task-comments'
 import { useProject } from '@/hooks/use-project'
 import { useTask } from '@/hooks/use-task'
-import { MOCK_USER } from '@/lib/mock-data'
+import { useConfirm } from '@/hooks/use-confirm'
 import { ArrowLeft, Edit, Trash2, User, Calendar, Flag } from 'lucide-react'
-import { TaskStatus, TaskPriority } from '@prisma/client'
 import { Task } from '@/types'
+import { toast } from 'sonner'
+
+// Define enums locally to avoid Prisma client import issues
+type TaskStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED'
+type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
 
 export default async function TaskDetailPage({
   params
@@ -27,14 +32,21 @@ export default async function TaskDetailPage({
 }
 
 function TaskDetailClient({ projectId, taskId }: { projectId: string; taskId: string }) {
-  // Use mock user for demo
-  const session = { user: MOCK_USER }
   const router = useRouter()
+  const { data: session } = useSession()
+  const { confirm, ConfirmationDialog } = useConfirm()
   const { project, isLoading: projectLoading } = useProject(projectId)
   const { task, isLoading: taskLoading, updateTask, deleteTask } = useTask(projectId, taskId)
   const [isEditing, setIsEditing] = useState(false)
 
-  // Remove auth redirect - using mock data
+  // Session is guaranteed by middleware, but add safety check
+  if (!session) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+      </div>
+    )
+  }
 
   if (projectLoading || taskLoading) {
     return (
@@ -69,13 +81,25 @@ function TaskDetailClient({ projectId, taskId }: { projectId: string; taskId: st
   }
 
   const handleTaskDelete = async () => {
-    if (window.confirm('¿Estás seguro de que quieres eliminar esta tarea? Esta acción no se puede deshacer.')) {
-      try {
-        await deleteTask()
-        router.push(`/projects/${projectId}`)
-      } catch (error) {
-        console.error('Failed to delete task:', error)
-      }
+    const confirmed = await confirm({
+      title: 'Eliminar tarea',
+      description: '¿Estás seguro de que quieres eliminar esta tarea? Esta acción no se puede deshacer.',
+      confirmText: 'Eliminar',
+      cancelText: 'Cancelar',
+      variant: 'destructive'
+    })
+
+    if (!confirmed) {
+      return
+    }
+
+    try {
+      await deleteTask()
+      toast.success('Tarea eliminada exitosamente')
+      router.push(`/projects/${projectId}`)
+    } catch (error) {
+      console.error('Failed to delete task:', error)
+      toast.error('Error al eliminar la tarea')
     }
   }
 
@@ -349,6 +373,7 @@ function TaskDetailClient({ projectId, taskId }: { projectId: string; taskId: st
           </div>
         </div>
       </main>
+      <ConfirmationDialog />
     </div>
   )
 }

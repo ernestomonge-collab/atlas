@@ -1,5 +1,5 @@
 // Mock data service for demo purposes with SPACES hierarchy
-import { TaskStatus, TaskPriority } from '@/types'
+import { TaskStatus, TaskPriority, ProjectTemplate, TemplateCategory, TemplateState } from '@/types'
 export const MOCK_USER = {
   id: 'user-1',
   name: 'Juan Pérez',
@@ -21,6 +21,7 @@ export const MOCK_SPACES = [
     description: 'Espacio dedicado al desarrollo de todas las funcionalidades principales de la empresa',
     color: '#3B82F6',
     icon: 'Code',
+    tags: ['Backend', 'Frontend', 'Mobile'],
     organizationId: 'org-1',
     createdAt: '2024-01-10T08:00:00Z',
     updatedAt: '2024-03-12T14:30:00Z',
@@ -72,6 +73,7 @@ export const MOCK_SPACES = [
     description: 'Gestión de procesos internos, herramientas y sistemas operativos',
     color: '#10B981',
     icon: 'Settings',
+    tags: ['DevOps', 'Infraestructura'],
     organizationId: 'org-1',
     createdAt: '2024-01-15T09:30:00Z',
     updatedAt: '2024-03-08T11:20:00Z',
@@ -110,6 +112,7 @@ export const MOCK_SPACES = [
     description: 'Campañas, contenido y estrategias de marketing digital',
     color: '#F59E0B',
     icon: 'Megaphone',
+    tags: ['SEO', 'Social Media', 'Content'],
     organizationId: 'org-1',
     createdAt: '2024-02-01T10:00:00Z',
     updatedAt: '2024-03-10T16:45:00Z',
@@ -1369,3 +1372,364 @@ export const MOCK_SPRINTS = [
     projectId: 'project-2'
   }
 ]
+
+// MOCK EPICS - High-level groupings of tasks
+export const MOCK_EPICS = [
+  {
+    id: 'epic-1',
+    name: 'Sistema de Autenticación',
+    description: 'Implementar sistema completo de autenticación y autorización con OAuth2, JWT y gestión de sesiones',
+    color: '#8B5CF6',
+    status: 'IN_PROGRESS' as const,
+    startDate: '2024-03-01T00:00:00Z',
+    targetDate: '2024-04-15T00:00:00Z',
+    projectId: 'project-1',
+    createdAt: '2024-02-28T10:00:00Z',
+    updatedAt: '2024-03-15T14:30:00Z',
+    tasks: [
+      {
+        id: 'task-1',
+        title: 'Diseñar arquitectura de autenticación',
+        status: 'COMPLETED' as const,
+        priority: 'HIGH' as const
+      },
+      {
+        id: 'task-2',
+        title: 'Implementar login con email/password',
+        status: 'COMPLETED' as const,
+        priority: 'URGENT' as const
+      },
+      {
+        id: 'task-3',
+        title: 'Integrar OAuth2 (Google, GitHub)',
+        status: 'IN_PROGRESS' as const,
+        priority: 'HIGH' as const
+      },
+      {
+        id: 'task-4',
+        title: 'Implementar refresh tokens',
+        status: 'PENDING' as const,
+        priority: 'MEDIUM' as const
+      }
+    ]
+  },
+  {
+    id: 'epic-2',
+    name: 'Carrito de Compras',
+    description: 'Desarrollo completo del flujo de carrito de compras, incluyendo persistencia, descuentos y checkout',
+    color: '#3B82F6',
+    status: 'IN_PROGRESS' as const,
+    startDate: '2024-03-10T00:00:00Z',
+    targetDate: '2024-04-30T00:00:00Z',
+    projectId: 'project-1',
+    createdAt: '2024-03-05T09:15:00Z',
+    updatedAt: '2024-03-18T16:20:00Z',
+    tasks: [
+      {
+        id: 'task-5',
+        title: 'Diseñar base de datos para carrito',
+        status: 'COMPLETED' as const,
+        priority: 'HIGH' as const
+      },
+      {
+        id: 'task-6',
+        title: 'Crear API de gestión de carrito',
+        status: 'IN_PROGRESS' as const,
+        priority: 'URGENT' as const
+      },
+      {
+        id: 'task-7',
+        title: 'Implementar UI del carrito',
+        status: 'IN_PROGRESS' as const,
+        priority: 'HIGH' as const
+      },
+      {
+        id: 'task-8',
+        title: 'Sistema de cupones y descuentos',
+        status: 'PENDING' as const,
+        priority: 'MEDIUM' as const
+      },
+      {
+        id: 'task-9',
+        title: 'Integrar pasarela de pagos',
+        status: 'PENDING' as const,
+        priority: 'URGENT' as const
+      }
+    ]
+  },
+  {
+    id: 'epic-3',
+    name: 'Panel de Administración',
+    description: 'Crear panel completo de administración con dashboards, reportes y gestión de usuarios',
+    color: '#10B981',
+    status: 'TODO' as const,
+    startDate: '2024-04-01T00:00:00Z',
+    targetDate: '2024-05-15T00:00:00Z',
+    projectId: 'project-1',
+    createdAt: '2024-03-12T11:30:00Z',
+    updatedAt: '2024-03-12T11:30:00Z',
+    tasks: [
+      {
+        id: 'task-10',
+        title: 'Diseñar wireframes del panel',
+        status: 'PENDING' as const,
+        priority: 'HIGH' as const
+      },
+      {
+        id: 'task-11',
+        title: 'Implementar sistema de roles',
+        status: 'PENDING' as const,
+        priority: 'URGENT' as const
+      },
+      {
+        id: 'task-12',
+        title: 'Crear dashboard con métricas',
+        status: 'PENDING' as const,
+        priority: 'MEDIUM' as const
+      }
+    ]
+  },
+  {
+    id: 'epic-4',
+    name: 'Optimización de Performance',
+    description: 'Mejorar el rendimiento general de la aplicación mediante caching, lazy loading y optimización de queries',
+    color: '#F59E0B',
+    status: 'DONE' as const,
+    startDate: '2024-02-01T00:00:00Z',
+    targetDate: '2024-03-01T00:00:00Z',
+    projectId: 'project-1',
+    createdAt: '2024-01-28T08:00:00Z',
+    updatedAt: '2024-03-01T17:45:00Z',
+    tasks: [
+      {
+        id: 'task-13',
+        title: 'Implementar Redis caching',
+        status: 'COMPLETED' as const,
+        priority: 'HIGH' as const
+      },
+      {
+        id: 'task-14',
+        title: 'Optimizar queries SQL',
+        status: 'COMPLETED' as const,
+        priority: 'URGENT' as const
+      },
+      {
+        id: 'task-15',
+        title: 'Implementar lazy loading de imágenes',
+        status: 'COMPLETED' as const,
+        priority: 'MEDIUM' as const
+      },
+      {
+        id: 'task-16',
+        title: 'Code splitting y tree shaking',
+        status: 'COMPLETED' as const,
+        priority: 'MEDIUM' as const
+      }
+    ]
+  },
+  {
+    id: 'epic-5',
+    name: 'App Móvil CRM',
+    description: 'Desarrollo de aplicación móvil nativa para iOS y Android con funcionalidades principales del CRM',
+    color: '#EC4899',
+    status: 'IN_PROGRESS' as const,
+    startDate: '2024-03-01T00:00:00Z',
+    targetDate: '2024-06-01T00:00:00Z',
+    projectId: 'project-2',
+    createdAt: '2024-02-25T13:00:00Z',
+    updatedAt: '2024-03-19T10:15:00Z',
+    tasks: [
+      {
+        id: 'task-17',
+        title: 'Setup React Native project',
+        status: 'COMPLETED' as const,
+        priority: 'URGENT' as const
+      },
+      {
+        id: 'task-18',
+        title: 'Implementar navegación principal',
+        status: 'COMPLETED' as const,
+        priority: 'HIGH' as const
+      },
+      {
+        id: 'task-19',
+        title: 'Pantalla de lista de clientes',
+        status: 'IN_PROGRESS' as const,
+        priority: 'HIGH' as const
+      },
+      {
+        id: 'task-20',
+        title: 'Detalle y edición de clientes',
+        status: 'IN_PROGRESS' as const,
+        priority: 'MEDIUM' as const
+      },
+      {
+        id: 'task-21',
+        title: 'Sincronización offline',
+        status: 'PENDING' as const,
+        priority: 'URGENT' as const
+      },
+      {
+        id: 'task-22',
+        title: 'Notificaciones push',
+        status: 'PENDING' as const,
+        priority: 'MEDIUM' as const
+      }
+    ]
+  },
+  {
+    id: 'epic-6',
+    name: 'Migración a Microservicios',
+    description: 'Refactorizar arquitectura monolítica a microservicios con Docker y Kubernetes',
+    color: '#6366F1',
+    status: 'TODO' as const,
+    startDate: '2024-05-01T00:00:00Z',
+    targetDate: '2024-08-31T00:00:00Z',
+    projectId: 'project-3',
+    createdAt: '2024-03-20T15:30:00Z',
+    updatedAt: '2024-03-20T15:30:00Z',
+    tasks: []
+  }
+]
+
+// MOCK TEMPLATES - System and Custom Project Templates
+export const MOCK_PROJECT_TEMPLATES: ProjectTemplate[] = [
+  // System Templates (isDefault: true)
+  {
+    id: 'template-1',
+    name: 'Desarrollo de Software',
+    description: 'Plantilla para proyectos de desarrollo con metodología ágil',
+    category: TemplateCategory.DESARROLLO_SOFTWARE,
+    icon: 'Code',
+    color: '#3B82F6',
+    isDefault: true,
+    organizationId: undefined,
+    states: [
+      { id: 'state-1-1', name: 'Por Hacer', color: '#9CA3AF', order: 1, isDefault: true },
+      { id: 'state-1-2', name: 'En Progreso', color: '#3B82F6', order: 2 },
+      { id: 'state-1-3', name: 'En Revisión', color: '#F59E0B', order: 3 },
+      { id: 'state-1-4', name: 'Testing', color: '#8B5CF6', order: 4 },
+      { id: 'state-1-5', name: 'Completado', color: '#10B981', order: 5 }
+    ],
+    createdAt: new Date('2024-01-01T00:00:00Z'),
+    updatedAt: new Date('2024-01-01T00:00:00Z'),
+    usageCount: 45
+  },
+  {
+    id: 'template-2',
+    name: 'Marketing',
+    description: 'Gestión de campañas y contenido de marketing',
+    category: TemplateCategory.MARKETING,
+    icon: 'Megaphone',
+    color: '#EC4899',
+    isDefault: true,
+    organizationId: undefined,
+    states: [
+      { id: 'state-2-1', name: 'Idea', color: '#9CA3AF', order: 1, isDefault: true },
+      { id: 'state-2-2', name: 'Planificación', color: '#3B82F6', order: 2 },
+      { id: 'state-2-3', name: 'En Producción', color: '#F59E0B', order: 3 },
+      { id: 'state-2-4', name: 'Publicado', color: '#10B981', order: 4 },
+      { id: 'state-2-5', name: 'Archivado', color: '#6B7280', order: 5 }
+    ],
+    createdAt: new Date('2024-01-01T00:00:00Z'),
+    updatedAt: new Date('2024-01-01T00:00:00Z'),
+    usageCount: 28
+  },
+  {
+    id: 'template-3',
+    name: 'Diseño',
+    description: 'Flujo de trabajo para proyectos de diseño y creatividad',
+    category: TemplateCategory.DISENO,
+    icon: 'Palette',
+    color: '#8B5CF6',
+    isDefault: true,
+    organizationId: undefined,
+    states: [
+      { id: 'state-3-1', name: 'Briefing', color: '#9CA3AF', order: 1, isDefault: true },
+      { id: 'state-3-2', name: 'Boceto', color: '#3B82F6', order: 2 },
+      { id: 'state-3-3', name: 'Diseño', color: '#8B5CF6', order: 3 },
+      { id: 'state-3-4', name: 'Revisión', color: '#F59E0B', order: 4 },
+      { id: 'state-3-5', name: 'Aprobado', color: '#10B981', order: 5 }
+    ],
+    createdAt: new Date('2024-01-01T00:00:00Z'),
+    updatedAt: new Date('2024-01-01T00:00:00Z'),
+    usageCount: 32
+  },
+  {
+    id: 'template-4',
+    name: 'Ventas',
+    description: 'Pipeline de ventas y gestión de oportunidades',
+    category: TemplateCategory.VENTAS,
+    icon: 'TrendingUp',
+    color: '#10B981',
+    isDefault: true,
+    organizationId: undefined,
+    states: [
+      { id: 'state-4-1', name: 'Lead', color: '#9CA3AF', order: 1, isDefault: true },
+      { id: 'state-4-2', name: 'Contactado', color: '#3B82F6', order: 2 },
+      { id: 'state-4-3', name: 'Calificado', color: '#8B5CF6', order: 3 },
+      { id: 'state-4-4', name: 'Propuesta', color: '#F59E0B', order: 4 },
+      { id: 'state-4-5', name: 'Negociación', color: '#EF4444', order: 5 },
+      { id: 'state-4-6', name: 'Ganado', color: '#10B981', order: 6 },
+      { id: 'state-4-7', name: 'Perdido', color: '#6B7280', order: 7 }
+    ],
+    createdAt: new Date('2024-01-01T00:00:00Z'),
+    updatedAt: new Date('2024-01-01T00:00:00Z'),
+    usageCount: 19
+  },
+  {
+    id: 'template-5',
+    name: 'General',
+    description: 'Plantilla simple para cualquier tipo de proyecto',
+    category: TemplateCategory.GENERAL,
+    icon: 'Folder',
+    color: '#6B7280',
+    isDefault: true,
+    organizationId: undefined,
+    states: [
+      { id: 'state-5-1', name: 'Por Hacer', color: '#9CA3AF', order: 1, isDefault: true },
+      { id: 'state-5-2', name: 'En Progreso', color: '#3B82F6', order: 2 },
+      { id: 'state-5-3', name: 'Completado', color: '#10B981', order: 3 }
+    ],
+    createdAt: new Date('2024-01-01T00:00:00Z'),
+    updatedAt: new Date('2024-01-01T00:00:00Z'),
+    usageCount: 67
+  },
+  // Custom Templates (created by users)
+  {
+    id: 'template-custom-1',
+    name: 'Sprint Scrum Personalizado',
+    description: 'Mi flujo personalizado de scrum con estados extras',
+    category: TemplateCategory.PERSONALIZADO,
+    icon: 'Zap',
+    color: '#F59E0B',
+    isDefault: false,
+    organizationId: 'org-1',
+    states: [
+      { id: 'state-c1-1', name: 'Backlog', color: '#9CA3AF', order: 1, isDefault: true },
+      { id: 'state-c1-2', name: 'Sprint Planning', color: '#3B82F6', order: 2 },
+      { id: 'state-c1-3', name: 'En Desarrollo', color: '#8B5CF6', order: 3 },
+      { id: 'state-c1-4', name: 'Code Review', color: '#F59E0B', order: 4 },
+      { id: 'state-c1-5', name: 'QA Testing', color: '#EC4899', order: 5 },
+      { id: 'state-c1-6', name: 'UAT', color: '#EF4444', order: 6 },
+      { id: 'state-c1-7', name: 'Done', color: '#10B981', order: 7 }
+    ],
+    createdById: 'user-1',
+    createdBy: MOCK_USER,
+    createdAt: new Date('2024-02-15T10:30:00Z'),
+    updatedAt: new Date('2024-02-15T10:30:00Z'),
+    usageCount: 5
+  }
+]
+
+export function getMockTemplates(): ProjectTemplate[] {
+  return MOCK_PROJECT_TEMPLATES
+}
+
+export function getMockTemplateById(id: string): ProjectTemplate | undefined {
+  return MOCK_PROJECT_TEMPLATES.find(template => template.id === id)
+}
+
+export function getMockTemplatesByCategory(category: TemplateCategory): ProjectTemplate[] {
+  return MOCK_PROJECT_TEMPLATES.filter(template => template.category === category)
+}

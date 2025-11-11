@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { signIn } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -9,7 +10,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Building2, Eye, EyeOff, Mail, Lock, User, Users } from 'lucide-react'
+import { Eye, EyeOff, Mail, Lock, User } from 'lucide-react'
+import Image from 'next/image'
 
 export default function RegisterPage() {
   const router = useRouter()
@@ -17,9 +19,7 @@ export default function RegisterPage() {
     name: '',
     email: '',
     password: '',
-    confirmPassword: '',
-    organizationName: '',
-    agreeToTerms: false
+    confirmPassword: ''
   })
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
@@ -36,7 +36,7 @@ export default function RegisterPage() {
     setIsLoading(true)
 
     // Basic validation
-    if (!formData.name || !formData.email || !formData.password || !formData.organizationName) {
+    if (!formData.name || !formData.email || !formData.password) {
       setError('Por favor completa todos los campos obligatorios')
       setIsLoading(false)
       return
@@ -54,17 +54,45 @@ export default function RegisterPage() {
       return
     }
 
-    if (!formData.agreeToTerms) {
-      setError('Debes aceptar los términos y condiciones')
-      setIsLoading(false)
-      return
-    }
+    try {
+      // Call registration API
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: formData.name,
+          email: formData.email,
+          password: formData.password
+        }),
+      })
 
-    // Simulate registration process
-    setTimeout(() => {
-      // Mock successful registration - redirect to dashboard
-      router.push('/dashboard')
-    }, 1500)
+      const data = await response.json()
+
+      if (!response.ok) {
+        setError(data.error || 'Error al crear la cuenta')
+        setIsLoading(false)
+        return
+      }
+
+      // Auto sign in after successful registration
+      const signInResult = await signIn('credentials', {
+        email: formData.email,
+        password: formData.password,
+        redirect: false,
+      })
+
+      if (signInResult?.error) {
+        // Registration succeeded but login failed, redirect to login page
+        router.push('/login?message=Cuenta creada exitosamente. Por favor inicia sesión.')
+      } else if (signInResult?.ok) {
+        // Both registration and login succeeded
+        router.push('/dashboard')
+        router.refresh()
+      }
+    } catch (err) {
+      setError('Ocurrió un error al crear la cuenta. Por favor intenta de nuevo.')
+      setIsLoading(false)
+    }
   }
 
   return (
@@ -72,18 +100,23 @@ export default function RegisterPage() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="flex items-center justify-center mb-4">
-            <Building2 className="h-12 w-12 text-blue-600" />
+          <div className="flex items-center justify-center gap-3">
+            <Image
+              src="/atalaya.png"
+              alt="Atlas Logo"
+              width={48}
+              height={48}
+              priority
+            />
+            <h1 className="text-3xl font-bold text-gray-900">Atlas</h1>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900">Lilab Ops v1.2</h1>
-          <p className="text-gray-600 mt-2">Crea tu organización</p>
         </div>
 
         <Card>
           <CardHeader>
             <CardTitle>Crear Cuenta</CardTitle>
             <CardDescription>
-              Configura tu organización y comienza a gestionar proyectos
+              Regístrate para comenzar a gestionar proyectos
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -120,22 +153,6 @@ export default function RegisterPage() {
                     placeholder="tu@empresa.com"
                     value={formData.email}
                     onChange={(e) => handleInputChange('email', e.target.value)}
-                    className="pl-10"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="organizationName">Nombre de la organización *</Label>
-                <div className="relative">
-                  <Users className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                  <Input
-                    id="organizationName"
-                    type="text"
-                    placeholder="Mi Empresa Tech"
-                    value={formData.organizationName}
-                    onChange={(e) => handleInputChange('organizationName', e.target.value)}
                     className="pl-10"
                     required
                   />
@@ -196,24 +213,6 @@ export default function RegisterPage() {
                 </div>
               </div>
 
-              <div className="flex items-start space-x-2">
-                <Checkbox
-                  id="terms"
-                  checked={formData.agreeToTerms}
-                  onCheckedChange={(checked) => handleInputChange('agreeToTerms', checked as boolean)}
-                />
-                <Label htmlFor="terms" className="text-sm leading-none">
-                  Acepto los{' '}
-                  <Link href="#" className="text-blue-600 hover:text-blue-800">
-                    términos y condiciones
-                  </Link>{' '}
-                  y la{' '}
-                  <Link href="#" className="text-blue-600 hover:text-blue-800">
-                    política de privacidad
-                  </Link>
-                </Label>
-              </div>
-
               <Button
                 type="submit"
                 className="w-full"
@@ -241,27 +240,8 @@ export default function RegisterPage() {
                 </Link>
               </p>
             </div>
-
-            {/* Demo Info */}
-            <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-              <h3 className="text-sm font-medium text-blue-900 mb-2">
-                🎭 Modo Demo
-              </h3>
-              <p className="text-xs text-blue-700">
-                Completa el formulario con cualquier información para acceder al dashboard de demostración.
-              </p>
-            </div>
           </CardContent>
         </Card>
-
-        <div className="text-center mt-8">
-          <Link
-            href="/"
-            className="text-sm text-gray-600 hover:text-gray-800"
-          >
-            ← Volver al inicio
-          </Link>
-        </div>
       </div>
     </div>
   )

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   DndContext,
   DragEndEvent,
@@ -57,6 +57,12 @@ const columns = [
 
 export function KanbanBoard({ tasks, onTaskUpdate }: KanbanBoardProps) {
   const [activeTask, setActiveTask] = useState<Task | null>(null)
+  const [localTasks, setLocalTasks] = useState<Task[]>(tasks)
+
+  // Update local tasks when props change
+  useEffect(() => {
+    setLocalTasks(tasks)
+  }, [tasks])
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -67,7 +73,7 @@ export function KanbanBoard({ tasks, onTaskUpdate }: KanbanBoardProps) {
   )
 
   const handleDragStart = (event: DragStartEvent) => {
-    const task = tasks.find(t => t.id === event.active.id)
+    const task = localTasks.find(t => t.id === event.active.id)
     if (task) {
       setActiveTask(task)
     }
@@ -85,18 +91,27 @@ export function KanbanBoard({ tasks, onTaskUpdate }: KanbanBoardProps) {
     // Check if it's actually a status column
     if (!columns.find(col => col.id === newStatus)) return
 
-    const task = tasks.find(t => t.id === taskId)
+    const task = localTasks.find(t => t.id === taskId)
     if (!task || task.status === newStatus) return
+
+    // Optimistic update: Update UI immediately
+    setLocalTasks(prevTasks =>
+      prevTasks.map(t =>
+        t.id === taskId ? { ...t, status: newStatus as any } : t
+      )
+    )
 
     try {
       await onTaskUpdate(taskId, { status: newStatus })
     } catch (error) {
       console.error('Failed to update task status:', error)
+      // Revert optimistic update on error
+      setLocalTasks(tasks)
     }
   }
 
   const getTasksByStatus = (status: string) => {
-    return tasks.filter(task => task.status === status)
+    return localTasks.filter(task => task.status === status)
   }
 
   return (

@@ -8,7 +8,8 @@ import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Building2, Mail, ArrowLeft, CheckCircle } from 'lucide-react'
+import { Mail, ArrowLeft, CheckCircle } from 'lucide-react'
+import Image from 'next/image'
 
 export default function ForgotPasswordPage() {
   const router = useRouter()
@@ -37,11 +38,25 @@ export default function ForgotPasswordPage() {
       return
     }
 
-    // Simulate password reset process
-    setTimeout(() => {
+    try {
+      const response = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Error al enviar el correo')
+      }
+
       setIsSuccess(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al procesar la solicitud')
+    } finally {
       setIsLoading(false)
-    }, 1500)
+    }
   }
 
   const handleBackToLogin = () => {
@@ -54,11 +69,16 @@ export default function ForgotPasswordPage() {
         <div className="w-full max-w-md">
           {/* Logo */}
           <div className="text-center mb-8">
-            <div className="flex items-center justify-center mb-4">
-              <Building2 className="h-12 w-12 text-blue-600" />
+            <div className="flex items-center justify-center gap-3">
+              <Image
+                src="/atalaya.png"
+                alt="Atlas Logo"
+                width={48}
+                height={48}
+                priority
+              />
+              <h1 className="text-3xl font-bold text-gray-900">Atlas</h1>
             </div>
-            <h1 className="text-3xl font-bold text-gray-900">Lilab Ops v1.2</h1>
-            <p className="text-gray-600 mt-2">Recuperación de contraseña</p>
           </div>
 
           <Card>
@@ -115,15 +135,6 @@ export default function ForgotPasswordPage() {
               </div>
             </CardContent>
           </Card>
-
-          <div className="text-center mt-8">
-            <Link
-              href="/"
-              className="text-sm text-gray-600 hover:text-gray-800"
-            >
-              ← Volver al inicio
-            </Link>
-          </div>
         </div>
       </div>
     )
@@ -134,11 +145,16 @@ export default function ForgotPasswordPage() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="flex items-center justify-center mb-4">
-            <Building2 className="h-12 w-12 text-blue-600" />
+          <div className="flex items-center justify-center gap-3">
+            <Image
+              src="/atalaya.png"
+              alt="Atlas Logo"
+              width={48}
+              height={48}
+              priority
+            />
+            <h1 className="text-3xl font-bold text-gray-900">Atlas</h1>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900">Lilab Ops v1.2</h1>
-          <p className="text-gray-600 mt-2">Recupera tu contraseña</p>
         </div>
 
         <Card>

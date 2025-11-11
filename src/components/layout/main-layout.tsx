@@ -4,8 +4,8 @@ import { ReactNode, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { NotificationDropdown } from '@/components/notifications/notification-dropdown'
 import { Sidebar } from './sidebar'
+import { GlobalSearch } from './global-search'
 import { Menu, X } from 'lucide-react'
-import { MOCK_USER } from '@/lib/mock-data'
 
 interface MainLayoutProps {
   children: ReactNode
@@ -16,9 +16,6 @@ interface MainLayoutProps {
 export function MainLayout({ children, title, description }: MainLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-
-  // Use mock user for demo
-  const session = { user: MOCK_USER }
 
   return (
     <div className="h-screen flex overflow-hidden bg-gray-50">
@@ -60,21 +57,26 @@ export function MainLayout({ children, title, description }: MainLayoutProps) {
             <Menu className="h-6 w-6" />
           </Button>
 
-          <div className="flex-1 px-4 flex justify-between items-center">
+          <div className="flex-1 px-4 flex justify-between items-center gap-4">
             {/* Page title */}
-            <div className="flex-1">
+            <div className="flex-1 min-w-0">
               {title && (
                 <div>
-                  <h1 className="text-lg font-semibold text-gray-900">{title}</h1>
+                  <h1 className="text-lg font-semibold text-gray-900 truncate">{title}</h1>
                   {description && (
-                    <p className="text-sm text-gray-600">{description}</p>
+                    <p className="text-sm text-gray-600 truncate">{description}</p>
                   )}
                 </div>
               )}
             </div>
 
+            {/* Search bar */}
+            <div className="hidden md:block flex-1 max-w-md">
+              <GlobalSearch />
+            </div>
+
             {/* Right side actions */}
-            <div className="ml-4 flex items-center md:ml-6 space-x-4">
+            <div className="flex items-center space-x-4">
               <NotificationDropdown />
               <Button
                 variant="outline"
@@ -90,7 +92,7 @@ export function MainLayout({ children, title, description }: MainLayoutProps) {
         {/* Main content area */}
         <main className="flex-1 relative overflow-y-auto focus:outline-none">
           <div className="py-6">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">
+            <div className="mx-auto px-4 sm:px-6 md:px-8">
               {children}
             </div>
           </div>

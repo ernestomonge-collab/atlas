@@ -5,10 +5,11 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
+import { MentionTextarea } from '@/components/ui/mention-textarea'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Card, CardContent } from '@/components/ui/card'
 import { Loader2, MessageSquare, Send } from 'lucide-react'
+import { toast } from 'sonner'
 
 const commentSchema = z.object({
   content: z.string().min(1, 'Comment cannot be empty').max(2000, 'Comment too long'),
@@ -91,9 +92,12 @@ export function TaskComments({ taskId }: TaskCommentsProps) {
 
       const newComment = await response.json()
       setComments(prev => [...prev, newComment])
+      toast.success('Comentario agregado exitosamente')
       reset()
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'An error occurred')
+      const errorMessage = error instanceof Error ? error.message : 'An error occurred'
+      setError(errorMessage)
+      toast.error(errorMessage)
     } finally {
       setIsSubmitting(false)
     }
@@ -153,8 +157,8 @@ export function TaskComments({ taskId }: TaskCommentsProps) {
             )}
 
             <div className="space-y-2">
-              <Textarea
-                placeholder="Añadir un comentario..."
+              <MentionTextarea
+                placeholder="Añadir un comentario... (Usa @ para mencionar usuarios)"
                 rows={3}
                 {...register('content')}
                 disabled={isSubmitting}

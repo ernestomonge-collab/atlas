@@ -1,12 +1,11 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
+import { useSession } from 'next-auth/react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { MainLayout } from '@/components/layout/main-layout'
-import { getMockTasksForCalendar, MOCK_USER } from '@/lib/mock-data'
 import { CalendarTask } from '@/types'
 import {
   Calendar as CalendarIcon,
@@ -21,9 +20,7 @@ import {
 
 
 export default function CalendarPage() {
-  // Use mock user for demo
-  const session = { user: MOCK_USER }
-  const router = useRouter()
+  const { data: session } = useSession()
   const [tasks, setTasks] = useState<CalendarTask[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -37,24 +34,56 @@ export default function CalendarPage() {
     project: 'all'
   })
 
-  // Remove auth redirect - using mock data
-
   useEffect(() => {
-    fetchCalendarData()
-  }, [])
+    if (session) {
+      fetchCalendarData()
+    }
+  }, [session])
 
   const fetchCalendarData = async () => {
     try {
       setIsLoading(true)
-      await new Promise(resolve => setTimeout(resolve, 600))
+      const response = await fetch('/api/tasks?hasDueDate=true')
 
-      const calendarTasks = getMockTasksForCalendar()
-      setTasks(calendarTasks as CalendarTask[])
+      if (!response.ok) {
+        throw new Error('Failed to fetch tasks')
+      }
+
+      const data = await response.json()
+
+      // Transform API data to CalendarTask format
+      const calendarTasks: CalendarTask[] = data.map((task: any) => ({
+        id: task.id,
+        title: task.title,
+        description: task.description || '',
+        status: task.status,
+        priority: task.priority,
+        dueDate: task.dueDate,
+        projectName: task.project.name,
+        projectId: task.project.id,
+        assignee: task.assignee ? {
+          id: task.assignee.id,
+          name: task.assignee.name || task.assignee.email,
+          email: task.assignee.email
+        } : undefined
+      }))
+
+      setTasks(calendarTasks)
     } catch (error) {
       console.error('Error fetching calendar data:', error)
+      setTasks([])
     } finally {
       setIsLoading(false)
     }
+  }
+
+  // Session is guaranteed by middleware, but add safety check
+  if (!session) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+      </div>
+    )
   }
 
   if (isLoading) {
@@ -64,8 +93,6 @@ export default function CalendarPage() {
       </div>
     )
   }
-
-  // Remove auth check - using mock data
 
   const getDaysInMonth = (date: Date) => {
     return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()

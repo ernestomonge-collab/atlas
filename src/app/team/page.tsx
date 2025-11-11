@@ -1,43 +1,64 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
-import { Button } from '@/components/ui/button'
+import { useSession } from 'next-auth/react'
+import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { InviteUserModal } from '@/components/team/invite-user-modal'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { MainLayout } from '@/components/layout/main-layout'
-import { useInvitations } from '@/hooks/use-invitations'
-import { MOCK_TEAM_MEMBERS, MOCK_USER } from '@/lib/mock-data'
-import { UserPlus, Users, Mail, Clock, CheckCircle, XCircle, Building2 } from 'lucide-react'
-import { UserRole, InvitationStatus } from '@prisma/client'
-import { User } from '@/types'
+import { EditUserModal } from '@/components/team/edit-user-modal'
+import { ChangePasswordModal } from '@/components/team/change-password-modal'
+import { Users, MoreVertical, Edit, Lock, ShieldAlert } from 'lucide-react'
+import { UserRole } from '@prisma/client'
+
+interface TeamMember {
+  id: string
+  name: string | null
+  email: string
+  role: UserRole
+  createdAt: string
+}
 
 export default function TeamPage() {
-  // Use mock user for demo
-  const session = { user: MOCK_USER }
+  const { data: session, status } = useSession()
   const router = useRouter()
-  const { invitations, isLoading, refreshInvitations } = useInvitations()
-  const [showInviteModal, setShowInviteModal] = useState(false)
-  const [teamMembers, setTeamMembers] = useState<User[]>([])
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
   const [membersLoading, setMembersLoading] = useState(true)
+  const [selectedUser, setSelectedUser] = useState<TeamMember | null>(null)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [showPasswordModal, setShowPasswordModal] = useState(false)
 
-  // Remove auth redirect - using mock data
+  // Check if user is admin
+  useEffect(() => {
+    if (status === 'loading') return
+
+    if (!session?.user || session.user.role !== 'ADMIN') {
+      router.push('/projects')
+    }
+  }, [session, status, router])
 
   useEffect(() => {
-    fetchTeamMembers()
-  }, [])
+    if (session?.user?.role === 'ADMIN') {
+      fetchTeamMembers()
+    }
+  }, [session])
 
   const fetchTeamMembers = async () => {
+    setMembersLoading(true)
     try {
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 600))
-
-      // Use mock team members data
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      setTeamMembers(MOCK_TEAM_MEMBERS as any)
+      const response = await fetch('/api/users')
+      if (response.ok) {
+        const users = await response.json()
+        setTeamMembers(users)
+      }
     } catch (error) {
       console.error('Failed to fetch team members:', error)
     } finally {
@@ -45,33 +66,53 @@ export default function TeamPage() {
     }
   }
 
-  // Remove loading and auth checks - using mock data
-
-  const isAdmin = session.user.role === 'ADMIN'
-
-  const handleUserInvited = () => {
-    refreshInvitations()
+  const handleEditUser = (member: TeamMember) => {
+    setSelectedUser(member)
+    setShowEditModal(true)
   }
 
-  const getStatusColor = (status: InvitationStatus) => {
-    switch (status) {
-      case 'PENDING': return 'bg-yellow-100 text-yellow-800'
-      case 'ACCEPTED': return 'bg-green-100 text-green-800'
-      case 'DECLINED': return 'bg-red-100 text-red-800'
-      case 'EXPIRED': return 'bg-gray-100 text-gray-800'
-      default: return 'bg-gray-100 text-gray-800'
-    }
+  const handleChangePassword = (member: TeamMember) => {
+    setSelectedUser(member)
+    setShowPasswordModal(true)
   }
 
-  const getStatusIcon = (status: InvitationStatus) => {
-    switch (status) {
-      case 'PENDING': return <Clock className="h-3 w-3" />
-      case 'ACCEPTED': return <CheckCircle className="h-3 w-3" />
-      case 'DECLINED': return <XCircle className="h-3 w-3" />
-      case 'EXPIRED': return <XCircle className="h-3 w-3" />
-      default: return <Clock className="h-3 w-3" />
-    }
+  const handleUserUpdated = () => {
+    fetchTeamMembers()
   }
+
+  // Check if current user is admin
+  const isAdmin = session?.user?.role === 'ADMIN'
+
+  // Loading state
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+      </div>
+    )
+  }
+
+  // Access denied for non-admin users
+  if (!session?.user || session.user.role !== 'ADMIN') {
+    return (
+      <MainLayout
+        title="Acceso Denegado"
+        description="No tienes permisos para acceder a esta página"
+      >
+        <div className="flex flex-col items-center justify-center py-12">
+          <ShieldAlert className="h-24 w-24 text-red-500 mb-4" />
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Acceso Denegado</h2>
+          <p className="text-gray-600 text-center mb-6">
+            Solo los administradores pueden acceder a la gestión de equipo.
+          </p>
+          <Button onClick={() => router.push('/projects')}>
+            Ir a Proyectos
+          </Button>
+        </div>
+      </MainLayout>
+    )
+  }
+
 
   const getRoleLabel = (role: UserRole) => {
     switch (role) {
@@ -101,205 +142,123 @@ export default function TeamPage() {
     return 'U'
   }
 
-  const pendingInvitations = invitations.filter(inv => inv.status === 'PENDING')
   const totalMembers = teamMembers.length
-  const activeInvitations = pendingInvitations.length
 
   return (
     <MainLayout
       title="Gestión de Equipo"
-      description="Administra miembros e invitaciones"
+      description="Administra los miembros de tu organización"
     >
-      {/* Header Actions */}
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Miembros del Equipo</h2>
-          <p className="text-gray-600">Gestiona usuarios e invitaciones de tu organización</p>
-        </div>
-        {isAdmin && (
-          <Button onClick={() => setShowInviteModal(true)}>
-            <UserPlus className="mr-2 h-4 w-4" />
-            Invitar Miembro
-          </Button>
-        )}
+      {/* Header */}
+      <div className="mb-8">
+        <h2 className="text-2xl font-bold text-gray-900">Miembros del Equipo</h2>
+        <p className="text-gray-600">Gestiona los usuarios de tu organización</p>
       </div>
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <Card>
-            <CardHeader className="flex flex-row items-center space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">
-                Miembros Totales
-              </CardTitle>
-              <Users className="h-4 w-4 ml-auto text-gray-400" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{totalMembers}</div>
-              <p className="text-xs text-gray-500">Miembros activos</p>
-            </CardContent>
-          </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">
-                Invitaciones Pendientes
-              </CardTitle>
-              <Mail className="h-4 w-4 ml-auto text-yellow-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{activeInvitations}</div>
-              <p className="text-xs text-gray-500">Esperando respuesta</p>
-            </CardContent>
-          </Card>
+      {/* Stats Card */}
+      <div className="mb-8">
+        <Card>
+          <CardHeader className="flex flex-row items-center space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-gray-600">
+              Miembros Totales
+            </CardTitle>
+            <Users className="h-4 w-4 ml-auto text-gray-400" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{totalMembers}</div>
+            <p className="text-xs text-gray-500">Miembros activos en la organización</p>
+          </CardContent>
+        </Card>
+      </div>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">
-                Total Invitaciones
-              </CardTitle>
-              <Building2 className="h-4 w-4 ml-auto text-gray-400" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{invitations.length}</div>
-              <p className="text-xs text-gray-500">Todas las invitaciones</p>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Team Members */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Miembros del Equipo</CardTitle>
-              <CardDescription>
-                {totalMembers > 0
-                  ? `${totalMembers} miembro${totalMembers !== 1 ? 's' : ''} en tu organización`
-                  : 'No hay miembros en tu organización'
-                }
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {membersLoading ? (
-                <div className="text-center py-8">
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto"></div>
-                  <p className="text-gray-500 mt-2">Cargando miembros...</p>
-                </div>
-              ) : teamMembers.length === 0 ? (
-                <div className="text-center py-8">
-                  <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">
-                    No hay miembros
-                  </h3>
-                  <p className="text-gray-500 mb-4">
-                    Invita a personas para empezar a colaborar.
-                  </p>
-                  {isAdmin && (
-                    <Button onClick={() => setShowInviteModal(true)}>
-                      <UserPlus className="mr-2 h-4 w-4" />
-                      Invitar Primer Miembro
-                    </Button>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {teamMembers.map((member) => (
-                    <div key={member.id} className="flex items-center justify-between p-4 border rounded-lg">
-                      <div className="flex items-center gap-3">
-                        <Avatar className="h-10 w-10">
-                          <AvatarFallback>
-                            {getInitials(member.name, member.email)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className="font-medium">{member.name || 'Sin nombre'}</p>
-                          <p className="text-sm text-gray-600">{member.email}</p>
-                        </div>
-                      </div>
-                      <Badge className={getRoleBadgeColor(member.role)}>
-                        {getRoleLabel(member.role)}
-                      </Badge>
+      {/* Team Members */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Miembros del Equipo</CardTitle>
+          <CardDescription>
+            {totalMembers > 0
+              ? `${totalMembers} miembro${totalMembers !== 1 ? 's' : ''} en tu organización`
+              : 'No hay miembros en tu organización'
+            }
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {membersLoading ? (
+            <div className="text-center py-8">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto"></div>
+              <p className="text-gray-500 mt-2">Cargando miembros...</p>
+            </div>
+          ) : teamMembers.length === 0 ? (
+            <div className="text-center py-8">
+              <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                No hay miembros
+              </h3>
+              <p className="text-gray-500">
+                Los usuarios registrados aparecerán aquí.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {teamMembers.map((member) => (
+                <div key={member.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50">
+                  <div className="flex items-center gap-3">
+                    <Avatar className="h-10 w-10">
+                      <AvatarFallback>
+                        {getInitials(member.name, member.email)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <p className="font-medium">{member.name || 'Sin nombre'}</p>
+                      <p className="text-sm text-gray-600">{member.email}</p>
                     </div>
-                  ))}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge className={getRoleBadgeColor(member.role)}>
+                      {getRoleLabel(member.role)}
+                    </Badge>
+                    {/* Only show actions if current user is admin and not editing themselves */}
+                    {isAdmin && member.id !== session.user.id && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="sm">
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => handleEditUser(member)}>
+                            <Edit className="mr-2 h-4 w-4" />
+                            Cambiar Rol
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleChangePassword(member)}>
+                            <Lock className="mr-2 h-4 w-4" />
+                            Cambiar Contraseña
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                  </div>
                 </div>
-              )}
-            </CardContent>
-          </Card>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-          {/* Invitations */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>Invitaciones</CardTitle>
-                  <CardDescription>
-                    {invitations.length > 0
-                      ? `${invitations.length} invitación${invitations.length !== 1 ? 'es' : ''} enviada${invitations.length !== 1 ? 's' : ''}`
-                      : 'No hay invitaciones enviadas'
-                    }
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <div className="text-center py-8">
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto"></div>
-                  <p className="text-gray-500 mt-2">Cargando invitaciones...</p>
-                </div>
-              ) : invitations.length === 0 ? (
-                <div className="text-center py-8">
-                  <Mail className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">
-                    No hay invitaciones
-                  </h3>
-                  <p className="text-gray-500 mb-4">
-                    Las invitaciones enviadas aparecerán aquí.
-                  </p>
-                  {isAdmin && (
-                    <Button onClick={() => setShowInviteModal(true)}>
-                      <UserPlus className="mr-2 h-4 w-4" />
-                      Enviar Primera Invitación
-                    </Button>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {invitations.map((invitation) => (
-                    <div key={invitation.id} className="flex items-center justify-between p-4 border rounded-lg">
-                      <div className="flex-1">
-                        <p className="font-medium">{invitation.email}</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <Badge className={getRoleBadgeColor(invitation.role)} variant="secondary">
-                            {getRoleLabel(invitation.role)}
-                          </Badge>
-                          <Badge className={getStatusColor(invitation.status)} variant="secondary">
-                            <div className="flex items-center gap-1">
-                              {getStatusIcon(invitation.status)}
-                              {invitation.status.toLowerCase()}
-                            </div>
-                          </Badge>
-                        </div>
-                        <p className="text-xs text-gray-500 mt-1">
-                          Enviada el {new Date(invitation.createdAt).toLocaleDateString()}
-                          {invitation.status === 'PENDING' && (
-                            <> • Expira el {new Date(invitation.expiresAt).toLocaleDateString()}</>
-                          )}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+      {/* Edit User Modal */}
+      <EditUserModal
+        open={showEditModal}
+        onOpenChange={setShowEditModal}
+        user={selectedUser}
+        onUserUpdated={handleUserUpdated}
+      />
 
-      {isAdmin && (
-        <InviteUserModal
-          open={showInviteModal}
-          onOpenChange={setShowInviteModal}
-          onUserInvited={handleUserInvited}
-        />
-      )}
+      {/* Change Password Modal */}
+      <ChangePasswordModal
+        open={showPasswordModal}
+        onOpenChange={setShowPasswordModal}
+        user={selectedUser}
+      />
     </MainLayout>
   )
 }

@@ -1,17 +1,22 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, Suspense } from 'react'
+import { signIn } from 'next-auth/react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Building2, Eye, EyeOff, Mail, Lock } from 'lucide-react'
+import { Eye, EyeOff, Mail, Lock } from 'lucide-react'
+import Image from 'next/image'
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const callbackUrl = searchParams.get('callbackUrl') || '/dashboard'
+
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -23,16 +28,24 @@ export default function LoginPage() {
     setError('')
     setIsLoading(true)
 
-    // Simulate login process
-    setTimeout(() => {
-      if (email && password) {
-        // Mock successful login - redirect to dashboard
-        router.push('/dashboard')
-      } else {
-        setError('Por favor completa todos los campos')
+    try {
+      const result = await signIn('credentials', {
+        email,
+        password,
+        redirect: false,
+      })
+
+      if (result?.error) {
+        setError(result.error)
         setIsLoading(false)
+      } else if (result?.ok) {
+        router.push(callbackUrl)
+        router.refresh()
       }
-    }, 1000)
+    } catch (err) {
+      setError('Ocurrió un error al iniciar sesión. Por favor intenta de nuevo.')
+      setIsLoading(false)
+    }
   }
 
   return (
@@ -40,11 +53,16 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="flex items-center justify-center mb-4">
-            <Building2 className="h-12 w-12 text-blue-600" />
+          <div className="flex items-center justify-center gap-3">
+            <Image
+              src="/atalaya.png"
+              alt="Atlas Logo"
+              width={48}
+              height={48}
+              priority
+            />
+            <h1 className="text-3xl font-bold text-gray-900">Atlas</h1>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900">Lilab Ops v1.2</h1>
-          <p className="text-gray-600 mt-2">Inicia sesión en tu cuenta</p>
         </div>
 
         <Card>
@@ -105,7 +123,7 @@ export default function LoginPage() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between">
+              <div className="flex items-center">
                 <div className="flex items-center space-x-2">
                   <input
                     id="remember"
@@ -116,12 +134,6 @@ export default function LoginPage() {
                     Recordarme
                   </Label>
                 </div>
-                <Link
-                  href="/forgot-password"
-                  className="text-sm text-blue-600 hover:text-blue-800"
-                >
-                  ¿Olvidaste tu contraseña?
-                </Link>
               </div>
 
               <Button
@@ -151,28 +163,21 @@ export default function LoginPage() {
                 </Link>
               </p>
             </div>
-
-            {/* Demo Credentials */}
-            <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-              <h3 className="text-sm font-medium text-blue-900 mb-2">
-                🎭 Credenciales de Demo
-              </h3>
-              <p className="text-xs text-blue-700">
-                Cualquier email y contraseña te permitirá acceder al dashboard de demostración.
-              </p>
-            </div>
           </CardContent>
         </Card>
-
-        <div className="text-center mt-8">
-          <Link
-            href="/"
-            className="text-sm text-gray-600 hover:text-gray-800"
-          >
-            ← Volver al inicio
-          </Link>
-        </div>
       </div>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    }>
+      <LoginForm />
+    </Suspense>
   )
 }

@@ -24,6 +24,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Edit } from 'lucide-react'
+import { toast } from 'sonner'
 
 const editProjectSchema = z.object({
   name: z.string().min(1, 'El nombre es requerido').max(100, 'El nombre es muy largo'),
@@ -62,19 +63,30 @@ export function EditProjectModal({ project, open, onOpenChange, onProjectUpdated
   const onSubmit = async (data: EditProjectFormData) => {
     setIsLoading(true)
     try {
-      // TODO: Implement API call to update project
-      console.log('Updating project:', { ...project, ...data })
+      const response = await fetch(`/api/projects/${project.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: data.name,
+          description: data.description || null,
+        }),
+      })
 
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to update project')
+      }
 
-      // Mock updated project
-      const updatedProject = { ...project, ...data }
+      const updatedProject = await response.json()
+      toast.success('Proyecto actualizado exitosamente')
       onProjectUpdated?.(updatedProject)
       onOpenChange(false)
       form.reset()
     } catch (error) {
       console.error('Error updating project:', error)
+      toast.error(error instanceof Error ? error.message : 'Error al actualizar el proyecto')
     } finally {
       setIsLoading(false)
     }

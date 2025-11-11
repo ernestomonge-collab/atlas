@@ -24,7 +24,9 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Loader2, UserPlus, Users, Trash2, Crown, Shield, Eye, User } from 'lucide-react'
+import { Loader2, UserPlus, Users, Trash2, Crown, Shield, Eye, User, Mail } from 'lucide-react'
+import { SendInvitationModal } from '@/components/invitations/send-invitation-modal'
+import { toast } from 'sonner'
 
 const addMemberSchema = z.object({
   userId: z.string().min(1, 'User is required'),
@@ -53,6 +55,8 @@ interface User {
 interface ManageProjectMembersModalProps {
   projectId: string
   projectName: string
+  spaceId: number | null
+  isSpacePublic?: boolean
   open: boolean
   onOpenChange: (open: boolean) => void
   onMembersUpdated: () => void
@@ -61,6 +65,8 @@ interface ManageProjectMembersModalProps {
 export function ManageProjectMembersModal({
   projectId,
   projectName,
+  spaceId,
+  isSpacePublic = true,
   open,
   onOpenChange,
   onMembersUpdated
@@ -70,6 +76,7 @@ export function ManageProjectMembersModal({
   const [projectMembers, setProjectMembers] = useState<ProjectMember[]>([])
   const [availableUsers, setAvailableUsers] = useState<User[]>([])
   const [membersLoading, setMembersLoading] = useState(true)
+  const [showInviteModal, setShowInviteModal] = useState(false)
 
   const {
     handleSubmit,
@@ -100,6 +107,7 @@ export function ManageProjectMembersModal({
       const response = await fetch(`/api/projects/${projectId}/members`)
       if (response.ok) {
         const members = await response.json()
+        console.log('[DEBUG] Project members:', members)
         setProjectMembers(members)
       }
     } catch (error) {
@@ -111,9 +119,30 @@ export function ManageProjectMembersModal({
 
   const fetchAvailableUsers = async () => {
     try {
-      const response = await fetch('/api/users')
+      // Logic for fetching users:
+      // - Public spaces: Fetch all organization users (everyone can be added to projects)
+      // - Private spaces: Fetch only space members (only members of the space can be added)
+      const endpoint = spaceId && !isSpacePublic
+        ? `/api/spaces/${spaceId}/members`
+        : '/api/users'
+
+      console.log('[DEBUG] Fetching users from:', endpoint)
+      console.log('[DEBUG] Space ID:', spaceId)
+      console.log('[DEBUG] Is Space Public:', isSpacePublic)
+
+      const response = await fetch(endpoint)
       if (response.ok) {
-        const users = await response.json()
+        const data = await response.json()
+        console.log('[DEBUG] Raw data from API:', data)
+
+        // If fetching space members, extract user from member object
+        // Space members endpoint returns: { id, role, user: { id, name, email } }
+        // Users endpoint returns: { id, name, email }
+        const users = spaceId && !isSpacePublic
+          ? data.map((member: any) => member.user)
+          : data
+
+        console.log('[DEBUG] Extracted users:', users)
         setAvailableUsers(users)
       }
     } catch (error) {
@@ -137,11 +166,14 @@ export function ManageProjectMembersModal({
         throw new Error(errorData.error || 'Failed to add member')
       }
 
+      toast.success('Miembro agregado al proyecto exitosamente')
       await fetchProjectMembers()
       reset()
       onMembersUpdated()
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'An error occurred')
+      const errorMessage = error instanceof Error ? error.message : 'An error occurred'
+      setError(errorMessage)
+      toast.error(errorMessage)
     } finally {
       setIsLoading(false)
     }
@@ -157,10 +189,12 @@ export function ManageProjectMembersModal({
         throw new Error('Failed to remove member')
       }
 
+      toast.success('Miembro eliminado del proyecto exitosamente')
       await fetchProjectMembers()
       onMembersUpdated()
     } catch (error) {
       console.error('Error removing member:', error)
+      toast.error('Error al eliminar miembro')
     }
   }
 
@@ -217,6 +251,10 @@ export function ManageProjectMembersModal({
     !projectMembers.some(member => member.user.id === user.id)
   )
 
+  console.log('[DEBUG] Available users:', availableUsers)
+  console.log('[DEBUG] Project members:', projectMembers)
+  console.log('[DEBUG] Users to show (filtered):', usersToShow)
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[700px] max-h-[80vh] overflow-y-auto">
@@ -244,8 +282,8 @@ export function ManageProjectMembersModal({
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-2 col-span-2">
                     <Label htmlFor="userId">Usuario</Label>
                     <Select
                       value={selectedUserId || ''}
@@ -262,20 +300,8 @@ export function ManageProjectMembersModal({
                           </div>
                         ) : (
                           usersToShow.map((user) => (
-                            <SelectItem key={user.id} value={user.id}>
-                              <div className="flex items-center gap-2">
-                                <Avatar className="h-6 w-6">
-                                  <AvatarFallback className="text-xs">
-                                    {getInitials(user.name, user.email)}
-                                  </AvatarFallback>
-                                </Avatar>
-                                <div className="flex flex-col">
-                                  <span className="text-sm">{user.name || user.email}</span>
-                                  {user.name && (
-                                    <span className="text-xs text-gray-500">{user.email}</span>
-                                  )}
-                                </div>
-                              </div>
+                            <SelectItem key={user.id} value={String(user.id)}>
+                              {user.name ? `${user.name} (${user.email})` : user.email}
                             </SelectItem>
                           ))
                         )}
@@ -286,7 +312,7 @@ export function ManageProjectMembersModal({
                     )}
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="space-y-2 col-span-1">
                     <Label htmlFor="role">Rol</Label>
                     <Select
                       value={selectedRole}
@@ -432,6 +458,19 @@ export function ManageProjectMembersModal({
           </Button>
         </div>
       </DialogContent>
+
+      {/* Send Invitation Modal */}
+      <SendInvitationModal
+        open={showInviteModal}
+        onOpenChange={setShowInviteModal}
+        type="PROJECT"
+        targetId={parseInt(projectId)}
+        targetName={projectName}
+        onInvitationSent={() => {
+          setShowInviteModal(false)
+          // Could show a success message here
+        }}
+      />
     </Dialog>
   )
 }

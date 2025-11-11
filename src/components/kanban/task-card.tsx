@@ -29,9 +29,10 @@ import { AlertTriangle, Calendar } from 'lucide-react'
 interface TaskCardProps {
   task: Task
   isDragging?: boolean
+  highlightOverdue?: boolean
 }
 
-export function TaskCard({ task, isDragging = false }: TaskCardProps) {
+export function TaskCard({ task, isDragging = false, highlightOverdue = false }: TaskCardProps) {
   const {
     attributes,
     listeners,
@@ -109,6 +110,9 @@ export function TaskCard({ task, isDragging = false }: TaskCardProps) {
     return dueDate < today
   }
 
+  // Check if task is overdue
+  const taskIsOverdue = task.dueDate && isOverdue(task.dueDate)
+
   return (
     <Card
       ref={setNodeRef}
@@ -117,7 +121,7 @@ export function TaskCard({ task, isDragging = false }: TaskCardProps) {
       {...listeners}
       className={`cursor-grab active:cursor-grabbing border-l-4 hover:shadow-md transition-all ${getPriorityColor(task.priority)} ${
         isDragging ? 'rotate-3 scale-105' : ''
-      }`}
+      } ${highlightOverdue && taskIsOverdue ? 'bg-red-50' : ''}`}
     >
       <CardContent className="p-4">
         <div className="space-y-3">

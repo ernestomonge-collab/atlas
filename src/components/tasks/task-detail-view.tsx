@@ -17,14 +17,27 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Task, Project, User, Sprint } from '@/types'
-import { TaskStatus, TaskPriority } from '@prisma/client'
 import { ArrowLeft, Loader2, Save, X } from 'lucide-react'
+
+// Define enums locally to avoid Prisma client import issues in client components
+const TaskStatus = {
+  PENDING: 'PENDING',
+  IN_PROGRESS: 'IN_PROGRESS',
+  COMPLETED: 'COMPLETED',
+} as const
+
+const TaskPriority = {
+  LOW: 'LOW',
+  MEDIUM: 'MEDIUM',
+  HIGH: 'HIGH',
+  URGENT: 'URGENT',
+} as const
 
 const editTaskSchema = z.object({
   title: z.string().min(1, 'Title is required').max(255, 'Title too long'),
   description: z.string().optional(),
-  status: z.nativeEnum(TaskStatus),
-  priority: z.nativeEnum(TaskPriority),
+  status: z.enum(['PENDING', 'IN_PROGRESS', 'COMPLETED']),
+  priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']),
   dueDate: z.string().optional(),
   assigneeId: z.string().optional(),
   sprintId: z.string().optional(),

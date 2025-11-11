@@ -1,83 +1,147 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { useSession } from 'next-auth/react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from '@/components/ui/breadcrumb'
-import { CreateProjectModal } from '@/components/projects/create-project-modal'
 import { AddMemberModal } from '@/components/spaces/add-member-modal'
 import { MainLayout } from '@/components/layout/main-layout'
-import { getMockSpaceById, getMockProjectsBySpaceId, getMockSpaceAnalytics, MOCK_USER } from '@/lib/mock-data'
 import { SpaceMember } from '@/types'
 import * as LucideIcons from 'lucide-react'
-import { Building2, Plus, Home, ChevronRight, BarChart3, Users, Clock, CheckCircle, UserPlus } from 'lucide-react'
+import { Building2, ArrowLeft, Loader2, Users, UserPlus, Layout, Lock, Globe } from 'lucide-react'
+
+interface SpaceData {
+  id: number
+  name: string
+  description?: string
+  color?: string
+  icon?: string
+  isPublic: boolean
+  createdAt: string
+  updatedAt: string
+  members: SpaceMember[]
+  template?: {
+    id: number
+    name: string
+    description?: string
+    icon: string
+    color: string
+    category: string
+    states: Array<{
+      id: number
+      name: string
+      color: string
+      order: number
+    }>
+  } | null
+  projects: Array<{
+    id: number
+    name: string
+    description?: string
+    _count: {
+      tasks: number
+      members: number
+    }
+  }>
+}
 
 export function SpacePageClient({ spaceId }: { spaceId: string }) {
-  // Use mock user for demo
-  const session = { user: MOCK_USER }
   const router = useRouter()
-  const [showCreateModal, setShowCreateModal] = useState(false)
+  const { data: session } = useSession()
   const [showAddMemberModal, setShowAddMemberModal] = useState(false)
+  const [space, setSpace] = useState<SpaceData | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [spaceMembers, setSpaceMembers] = useState<SpaceMember[]>([])
+  const [mounted, setMounted] = useState(false)
 
-  const space = getMockSpaceById(spaceId)
-  const [spaceMembers, setSpaceMembers] = useState(space?.members || [])
-  const projects = getMockProjectsBySpaceId(spaceId)
-  const analytics = getMockSpaceAnalytics(spaceId)
+  // Check if current user is owner or admin of this space
+  const isSpaceOwnerOrAdmin = spaceMembers?.some(
+    member => member.userId === parseInt(session?.user?.id || '0') &&
+              (member.role === 'OWNER' || member.role === 'ADMIN')
+  )
 
-  // Remove auth redirect - using mock data
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  useEffect(() => {
+    fetchSpaceData()
+  }, [spaceId])
+
+  const fetchSpaceData = async () => {
+    try {
+      setIsLoading(true)
+
+      // First load: Get space info WITHOUT projects (faster)
+      const response = await fetch(`/api/spaces/${spaceId}?includeProjects=false`)
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          notFound()
+        }
+        throw new Error('Failed to fetch space')
+      }
+
+      const data = await response.json()
+      setSpace(data)
+      setSpaceMembers(data.members || [])
+      setIsLoading(false)
+
+      // Second load: Get projects in background (lazy)
+      const projectsResponse = await fetch(`/api/spaces/${spaceId}`)
+      if (projectsResponse.ok) {
+        const fullData = await projectsResponse.json()
+        setSpace(fullData)
+      }
+    } catch (error) {
+      console.error('Error fetching space:', error)
+      setIsLoading(false)
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <MainLayout title="Loading..." description="Loading space details">
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-12 w-12 animate-spin text-blue-600" />
+        </div>
+      </MainLayout>
+    )
+  }
 
   if (!space) {
     notFound()
   }
 
-  const handleProjectCreated = () => {
-    // In a real app, this would refresh the projects
-    console.log('Project created for space:', space.id)
-  }
-
   const handleMemberAdded = (newMember: SpaceMember) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     setSpaceMembers(prevMembers => [...prevMembers, newMember as any])
-    console.log('Member added to space:', newMember)
+    // Refresh space data
+    fetchSpaceData()
   }
 
   // Dynamically get Lucide icon
-  const IconComponent = LucideIcons[space.icon as keyof typeof LucideIcons] || LucideIcons.Folder
-
-  const getProgressColor = (progress: number) => {
-    if (progress >= 80) return 'bg-green-500'
-    if (progress >= 60) return 'bg-blue-500'
-    if (progress >= 40) return 'bg-yellow-500'
-    return 'bg-gray-400'
-  }
+  const IconComponent = LucideIcons[(space.icon || 'Folder') as keyof typeof LucideIcons] || LucideIcons.Folder
+  const projects = space.projects || []
 
   return (
     <MainLayout
       title={space.name}
       description={space.description || 'Space overview and projects'}
     >
-      {/* Breadcrumb Navigation */}
+      {/* Back button */}
       <div className="mb-6">
-        <Breadcrumb>
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbLink href="/dashboard">
-                <Home className="h-4 w-4" />
-                Dashboard
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator>
-              <ChevronRight className="h-4 w-4" />
-            </BreadcrumbSeparator>
-            <BreadcrumbItem>
-              <BreadcrumbPage>{space.name}</BreadcrumbPage>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
+        <Link
+          href="/spaces"
+          className="inline-flex items-center text-sm text-gray-600 hover:text-gray-900 transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Volver a Espacios
+        </Link>
       </div>
 
       {/* Space Header */}
@@ -95,7 +159,20 @@ export function SpacePageClient({ spaceId }: { spaceId: string }) {
               })}
             </div>
             <div className="flex-1">
-              <CardTitle className="text-2xl">{space.name}</CardTitle>
+              <div className="flex items-center gap-3">
+                <CardTitle className="text-2xl">{space.name}</CardTitle>
+                {space.isPublic ? (
+                  <Badge variant="secondary" className="bg-green-100 text-green-700 hover:bg-green-100">
+                    <Globe className="h-3 w-3 mr-1" />
+                    Público
+                  </Badge>
+                ) : (
+                  <Badge variant="secondary" className="bg-orange-100 text-orange-700 hover:bg-orange-100">
+                    <Lock className="h-3 w-3 mr-1" />
+                    Privado
+                  </Badge>
+                )}
+              </div>
               {space.description && (
                 <CardDescription className="mt-2 text-base">
                   {space.description}
@@ -107,74 +184,74 @@ export function SpacePageClient({ spaceId }: { spaceId: string }) {
                 <span>Updated {new Date(space.updatedAt).toLocaleDateString()}</span>
               </div>
             </div>
-            <Button onClick={() => setShowCreateModal(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              New Project
-            </Button>
           </div>
         </CardHeader>
-      </Card>
 
-      {/* Members Section */}
-      <Card className="mb-8">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5" />
-                Space Members
-              </CardTitle>
-              <CardDescription>
-                {spaceMembers?.length > 0
-                  ? `${spaceMembers.length} member${spaceMembers.length !== 1 ? 's' : ''} with access to this space`
-                  : 'No members in this space'
-                }
-              </CardDescription>
-            </div>
-            <Button onClick={() => setShowAddMemberModal(true)}>
-              <UserPlus className="mr-2 h-4 w-4" />
-              Add Member
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {spaceMembers && spaceMembers.length > 0 ? (
-            <div className="space-y-3">
-              {spaceMembers.map((member) => (
-                <div key={member.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
-                  <div className="flex items-center space-x-3">
-                    <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
-                      <span className="text-blue-600 font-semibold text-sm">
-                        {member.user.name.charAt(0).toUpperCase()}
-                      </span>
-                    </div>
-                    <div>
-                      <p className="font-medium text-gray-900">{member.user.name}</p>
-                      <p className="text-sm text-gray-500">{member.user.email}</p>
-                    </div>
+        {/* Template Section - Integrated */}
+        {space.template && (
+          <CardContent className="pt-0">
+            <div className="border-t pt-6">
+              <div className="flex items-center gap-2 mb-4">
+                <Layout className="h-5 w-5 text-gray-600" />
+                <h3 className="font-semibold text-lg">Plantilla del Espacio</h3>
+              </div>
+              <p className="text-sm text-gray-500 mb-4">
+                Plantilla por defecto para nuevos proyectos en este espacio
+              </p>
+
+              {/* Template Info */}
+              <div className="p-4 border rounded-lg bg-gray-50">
+                <div className="flex items-center gap-4 mb-4">
+                  <div
+                    className="p-4 rounded-lg flex-shrink-0"
+                    style={{ backgroundColor: `${space.template.color}20` }}
+                  >
+                    {(() => {
+                      const TemplateIcon = LucideIcons[space.template.icon as keyof typeof LucideIcons] || LucideIcons.Folder
+                      return React.createElement(TemplateIcon as any, {
+                        className: "h-6 w-6",
+                        style: { color: space.template.color }
+                      })
+                    })()}
                   </div>
-                  <div className="flex items-center space-x-3">
-                    <Badge variant={member.role === 'ADMIN' ? 'default' : 'secondary'}>
-                      {member.role === 'ADMIN' ? 'Admin' : 'Member'}
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-base">{space.template.name}</h4>
+                    {space.template.description && (
+                      <p className="text-sm text-gray-600 mt-1">{space.template.description}</p>
+                    )}
+                    <Badge variant="secondary" className="mt-2">
+                      {space.template.category}
                     </Badge>
-                    <span className="text-xs text-gray-400">
-                      Added {new Date(member.addedAt).toLocaleDateString()}
-                    </span>
                   </div>
                 </div>
-              ))}
+
+                {/* Template States - Inside gray section */}
+                {space.template.states && space.template.states.length > 0 && (
+                  <div className="flex flex-wrap gap-2 pt-4 border-t border-gray-200">
+                    {space.template.states.map((state) => (
+                      <Badge
+                        key={state.id}
+                        variant="outline"
+                        className="px-3 py-1.5"
+                        style={{
+                          borderColor: state.color,
+                          color: state.color,
+                          backgroundColor: `${state.color}10`
+                        }}
+                      >
+                        {state.name}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-          ) : (
-            <div className="text-center py-8">
-              <Users className="h-8 w-8 text-gray-400 mx-auto mb-3" />
-              <p className="text-gray-500">No members in this space yet</p>
-            </div>
-          )}
-        </CardContent>
+          </CardContent>
+        )}
       </Card>
 
       {/* Projects Section */}
-      <Card>
+      <Card className="mb-8">
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
@@ -195,14 +272,9 @@ export function SpacePageClient({ spaceId }: { spaceId: string }) {
               <h3 className="text-lg font-medium text-gray-900 mb-2">
                 No projects in this space yet
               </h3>
-              <p className="text-gray-500 mb-6">
-                Get started by creating your first project in the {space.name} space.
-                You can organize tasks, manage sprints, and collaborate with your team.
+              <p className="text-gray-500">
+                Projects in this space can be created from the Projects page.
               </p>
-              <Button onClick={() => setShowCreateModal(true)}>
-                <Plus className="mr-2 h-4 w-4" />
-                Create First Project
-              </Button>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -226,25 +298,19 @@ export function SpacePageClient({ spaceId }: { spaceId: string }) {
                         )}
                       </div>
                       <Badge variant="secondary">
-                        {project.totalTasks} tasks
+                        {project._count.tasks} tasks
                       </Badge>
                     </div>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-3">
                       <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray-600">Progress</span>
-                        <span className="font-medium">{project.progress}%</span>
+                        <span className="text-gray-600">Tasks</span>
+                        <span className="font-medium">{project._count.tasks}</span>
                       </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2">
-                        <div
-                          className={`h-2 rounded-full transition-all ${getProgressColor(project.progress)}`}
-                          style={{ width: `${project.progress}%` }}
-                        />
-                      </div>
-                      <div className="flex items-center justify-between text-xs text-gray-500">
-                        <span>{project.completedTasks} completed</span>
-                        <span>{project.totalTasks - project.completedTasks} remaining</span>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-600">Members</span>
+                        <span className="font-medium">{project._count.members}</span>
                       </div>
                     </div>
                   </CardContent>
@@ -255,18 +321,79 @@ export function SpacePageClient({ spaceId }: { spaceId: string }) {
         </CardContent>
       </Card>
 
-      <CreateProjectModal
-        open={showCreateModal}
-        onOpenChange={setShowCreateModal}
-        onProjectCreated={handleProjectCreated}
-      />
+      {/* Members Section */}
+      <Card className="mb-8">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                Space Members
+              </CardTitle>
+              <CardDescription>
+                {spaceMembers?.length > 0
+                  ? `${spaceMembers.length} member${spaceMembers.length !== 1 ? 's' : ''} with access to this space`
+                  : 'No members in this space'
+                }
+              </CardDescription>
+            </div>
+            {/* Only show "Add Member" for private spaces */}
+            {isSpaceOwnerOrAdmin && !space?.isPublic && (
+              <Button
+                onClick={() => setShowAddMemberModal(true)}
+              >
+                <UserPlus className="mr-2 h-4 w-4" />
+                Add Member
+              </Button>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {spaceMembers && spaceMembers.length > 0 ? (
+            <div className="space-y-3">
+              {spaceMembers.map((member) => (
+                <div key={member.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
+                  <div className="flex items-center space-x-3">
+                    <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
+                      <span className="text-blue-600 font-semibold text-sm">
+                        {member.user.name.charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-900">{member.user.name}</p>
+                      <p className="text-sm text-gray-500">{member.user.email}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <Badge variant={member.role === 'ADMIN' || member.role === 'OWNER' ? 'default' : 'secondary'}>
+                      {member.role === 'OWNER' ? 'Owner' : member.role === 'ADMIN' ? 'Admin' : 'Miembro'}
+                    </Badge>
+                    <span className="text-xs text-gray-400">
+                      Added {new Date(member.joinedAt).toLocaleDateString()}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <Users className="h-8 w-8 text-gray-400 mx-auto mb-3" />
+              <p className="text-gray-500">No members in this space yet</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-      <AddMemberModal
-        open={showAddMemberModal}
-        onOpenChange={setShowAddMemberModal}
-        onMemberAdded={handleMemberAdded}
-        spaceName={space.name}
-      />
+      {mounted && (
+        <AddMemberModal
+          open={showAddMemberModal}
+          onOpenChange={setShowAddMemberModal}
+          onMemberAdded={handleMemberAdded}
+          spaceName={space.name}
+          spaceId={spaceId}
+          existingMembers={spaceMembers}
+        />
+      )}
     </MainLayout>
   )
 }

@@ -28,6 +28,7 @@ export interface Space {
   description?: string;
   color?: string; // Corporate blue default
   icon?: string; // Lucide icon name
+  tags?: string[]; // Tags/labels for the space
   organizationId: string;
   createdAt: Date;
   updatedAt: Date;
@@ -92,12 +93,15 @@ export interface Task {
   priority: TaskPriority;
   dueDate?: Date;
   projectId: string;
+  sprintId?: string;
+  epicId?: string;
   assigneeId?: string;
   createdById: string;
   createdAt: Date;
   updatedAt: Date;
   assignee?: User;
   createdBy: User;
+  epic?: Epic;
   comments: Comment[];
   attachments: Attachment[];
 }
@@ -216,6 +220,28 @@ export enum SprintStatus {
   CANCELLED = 'CANCELLED'
 }
 
+// Epic Types
+export interface Epic {
+  id: string;
+  name: string;
+  description?: string;
+  color?: string;
+  status: EpicStatus;
+  startDate?: Date;
+  targetDate?: Date;
+  projectId: string;
+  createdAt: Date;
+  updatedAt: Date;
+  tasks: Task[];
+}
+
+export enum EpicStatus {
+  TODO = 'TODO',
+  IN_PROGRESS = 'IN_PROGRESS',
+  DONE = 'DONE',
+  CANCELLED = 'CANCELLED'
+}
+
 // Calendar Types
 export interface CalendarTask {
   id: string;
@@ -235,4 +261,41 @@ export interface DashboardData {
   recentTasks: Task[];
   notifications: Notification[];
   progressStats: ProgressStats;
+}
+
+// Template Types
+export interface ProjectTemplate {
+  id: string;
+  name: string;
+  description?: string;
+  category: TemplateCategory;
+  icon?: string; // Lucide icon name
+  color?: string;
+  isDefault: boolean; // System templates vs custom templates
+  organizationId?: string; // null for system templates
+  states: TemplateState[];
+  createdById?: string;
+  createdBy?: User;
+  createdAt: Date;
+  updatedAt: Date;
+  usageCount?: number; // How many times this template has been used
+}
+
+export interface TemplateState {
+  id: string;
+  name: string;
+  color: string;
+  order: number;
+  isDefault?: boolean; // Default state for new tasks
+}
+
+export enum TemplateCategory {
+  DESARROLLO_SOFTWARE = 'DESARROLLO_SOFTWARE',
+  MARKETING = 'MARKETING',
+  DISENO = 'DISENO',
+  VENTAS = 'VENTAS',
+  OPERACIONES = 'OPERACIONES',
+  RECURSOS_HUMANOS = 'RECURSOS_HUMANOS',
+  GENERAL = 'GENERAL',
+  PERSONALIZADO = 'PERSONALIZADO'
 }

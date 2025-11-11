@@ -2,7 +2,7 @@ import NextAuth from 'next-auth'
 import { PrismaAdapter } from '@auth/prisma-adapter'
 import Credentials from 'next-auth/providers/credentials'
 import bcrypt from 'bcryptjs'
-import { prisma } from '@/lib/db'
+import { prisma } from '@/lib/prisma'
 import { loginSchema } from '@/lib/validations'
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
@@ -52,9 +52,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   callbacks: {
     session({ session, token }) {
       if (token && session.user) {
-        session.user.id = token.id as string
+        session.user.id = token.id as number
         session.user.role = token.role as 'ADMIN' | 'MEMBER' | 'READ_ONLY'
-        session.user.organizationId = token.organizationId as string
+        session.user.organizationId = token.organizationId as number
       }
       return session
     },

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import {
@@ -18,45 +18,104 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { toast } from 'sonner'
 import { SpaceMember } from '@/types'
 import { Badge } from '@/components/ui/badge'
-import { UserPlus, Users, Shield } from 'lucide-react'
+import { UserPlus, Users, Shield, Loader2, Eye, Trash2 } from 'lucide-react'
+
+interface User {
+  id: string
+  name?: string
+  email: string
+}
 
 interface AddMemberModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onMemberAdded: (member: SpaceMember) => void
   spaceName: string
+  spaceId: string
+  existingMembers?: SpaceMember[]
 }
 
-// Mock users available in the organization
-const AVAILABLE_USERS = [
-  {
-    id: 'user-7',
-    name: 'Patricia Sánchez',
-    email: 'patricia.sanchez@empresa.com'
-  },
-  {
-    id: 'user-8',
-    name: 'Roberto Silva',
-    email: 'roberto.silva@empresa.com'
-  },
-  {
-    id: 'user-9',
-    name: 'Carmen Torres',
-    email: 'carmen.torres@empresa.com'
-  },
-  {
-    id: 'user-10',
-    name: 'Miguel Herrera',
-    email: 'miguel.herrera@empresa.com'
-  }
-]
-
-export function AddMemberModal({ open, onOpenChange, onMemberAdded, spaceName }: AddMemberModalProps) {
+export function AddMemberModal({ open, onOpenChange, onMemberAdded, spaceName, spaceId, existingMembers = [] }: AddMemberModalProps) {
   const [selectedUser, setSelectedUser] = useState('')
   const [selectedRole, setSelectedRole] = useState('MEMBER')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [availableUsers, setAvailableUsers] = useState<User[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [removingMemberId, setRemovingMemberId] = useState<string | null>(null)
+
+  const handleUserChange = (value: string) => {
+    console.log('Usuario seleccionado:', value)
+    setSelectedUser(value)
+  }
+
+  // Filter out users who are already members
+  const filteredUsers = availableUsers.filter(user => {
+    const existingMemberIds = existingMembers.map(m => m.userId.toString())
+    return !existingMemberIds.includes(user.id)
+  })
+
+  // Helper function to get user display text
+  const getUserDisplayText = (user: User) => {
+    if (user.name) {
+      return `${user.name} (${user.email})`
+    }
+    return user.email
+  }
+
+  const handleRemoveMember = async (memberId: string) => {
+    if (!confirm('¿Estás seguro de que deseas eliminar este miembro del espacio?')) {
+      return
+    }
+
+    try {
+      setRemovingMemberId(memberId)
+      const response = await fetch(`/api/spaces/${spaceId}/members/${memberId}`, {
+        method: 'DELETE'
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to remove member')
+      }
+
+      toast.success('Miembro eliminado exitosamente')
+      // Refresh the page or update parent component
+      window.location.reload()
+    } catch (error) {
+      console.error('Error removing member:', error)
+      toast.error('Error al eliminar miembro')
+    } finally {
+      setRemovingMemberId(null)
+    }
+  }
+
+  useEffect(() => {
+    if (open) {
+      fetchAvailableUsers()
+    }
+  }, [open])
+
+  const fetchAvailableUsers = async () => {
+    try {
+      setIsLoading(true)
+      const response = await fetch('/api/users')
+      if (response.ok) {
+        const users = await response.json()
+        console.log('Usuarios cargados:', users)
+        setAvailableUsers(users)
+      } else {
+        console.error('Error al cargar usuarios:', response.status)
+      }
+    } catch (error) {
+      console.error('Failed to fetch users:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -66,38 +125,33 @@ export function AddMemberModal({ open, onOpenChange, onMemberAdded, spaceName }:
     }
 
     setIsSubmitting(true)
+    setError(null)
 
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      const response = await fetch(`/api/spaces/${spaceId}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: selectedUser,
+          role: selectedRole,
+        }),
+      })
 
-      const user = AVAILABLE_USERS.find(u => u.id === selectedUser)
-      if (user) {
-        const newMember = {
-          id: `member-${Date.now()}`,
-          userId: user.id,
-          spaceId: 'current-space',
-          role: selectedRole as 'ADMIN' | 'MEMBER',
-          user: {
-            id: user.id,
-            name: user.name,
-            email: user.email,
-            avatar: null
-          },
-          addedAt: new Date().toISOString()
-        }
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        onMemberAdded(newMember as any)
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to add member')
       }
+
+      const newMember = await response.json()
+      onMemberAdded(newMember)
 
       // Reset form
       setSelectedUser('')
       setSelectedRole('MEMBER')
       onOpenChange(false)
-
     } catch (error) {
       console.error('Error adding member:', error)
+      setError(error instanceof Error ? error.message : 'An error occurred')
     } finally {
       setIsSubmitting(false)
     }
@@ -124,29 +178,97 @@ export function AddMemberModal({ open, onOpenChange, onMemberAdded, spaceName }:
 
         <form onSubmit={handleSubmit}>
           <div className="grid gap-6 py-4">
+            {error && (
+              <div className="p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md">
+                {error}
+              </div>
+            )}
+
+            {/* Current Members Section */}
+            {existingMembers.length > 0 && (
+              <div className="border rounded-lg p-4 bg-gray-50">
+                <Label className="text-sm font-medium mb-3 block">
+                  Miembros Actuales ({existingMembers.length})
+                </Label>
+                <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                  {existingMembers.map((member) => (
+                    <div
+                      key={member.id}
+                      className="flex items-center justify-between p-2 bg-white border rounded-md"
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                          <span className="text-blue-600 font-semibold text-xs">
+                            {member.user.name?.charAt(0).toUpperCase() || member.user.email.charAt(0).toUpperCase()}
+                          </span>
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-sm truncate">
+                            {member.user.name || member.user.email}
+                          </p>
+                          {member.user.name && (
+                            <p className="text-xs text-gray-500 truncate">{member.user.email}</p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <Badge variant={member.role === 'ADMIN' || member.role === 'OWNER' ? 'default' : member.role === 'VIEWER' ? 'outline' : 'secondary'} className="text-xs">
+                          {member.role === 'OWNER' ? 'Owner' : member.role === 'ADMIN' ? 'Admin' : member.role === 'VIEWER' ? 'Invitado' : 'Miembro'}
+                        </Badge>
+                        {member.role !== 'OWNER' && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleRemoveMember(member.id)}
+                            disabled={removingMemberId === member.id}
+                            className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                          >
+                            {removingMemberId === member.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-4 w-4" />
+                            )}
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* User Selection */}
             <div className="grid gap-2">
               <Label>Seleccionar Usuario *</Label>
-              <Select value={selectedUser} onValueChange={setSelectedUser}>
+              <Select value={selectedUser} onValueChange={handleUserChange} disabled={isLoading || isSubmitting}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Elige un usuario de tu organización" />
+                  <SelectValue placeholder="Selecciona un usuario..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {AVAILABLE_USERS.map((user) => (
-                    <SelectItem key={user.id} value={user.id}>
-                      <div className="flex items-center gap-2">
-                        <div className="h-6 w-6 rounded-full bg-blue-100 flex items-center justify-center">
-                          <span className="text-blue-600 font-semibold text-xs">
-                            {user.name.charAt(0).toUpperCase()}
-                          </span>
+                  {isLoading ? (
+                    <div className="p-2 text-sm text-gray-500 text-center">
+                      <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+                    </div>
+                  ) : filteredUsers.length === 0 ? (
+                    <div className="p-2 text-sm text-gray-500">
+                      {availableUsers.length === 0
+                        ? 'No hay usuarios disponibles'
+                        : 'Todos los usuarios ya son miembros de este espacio'
+                      }
+                    </div>
+                  ) : (
+                    filteredUsers.map((user) => (
+                      <SelectItem key={user.id} value={String(user.id)}>
+                        <div className="flex items-center gap-2">
+                          <Users className="h-4 w-4" />
+                          <div className="flex flex-col">
+                            <span>{user.name || user.email}</span>
+                          </div>
                         </div>
-                        <div className="flex flex-col">
-                          <span className="font-medium">{user.name}</span>
-                          <span className="text-xs text-gray-500">{user.email}</span>
-                        </div>
-                      </div>
-                    </SelectItem>
-                  ))}
+                      </SelectItem>
+                    ))
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -182,31 +304,36 @@ export function AddMemberModal({ open, onOpenChange, onMemberAdded, spaceName }:
             </div>
 
             {/* Preview */}
-            {selectedUser && (
-              <div className="p-4 border rounded-lg bg-gray-50">
-                <Label className="text-sm font-medium">Vista Previa:</Label>
-                <div className="flex items-center justify-between mt-2">
-                  <div className="flex items-center space-x-3">
-                    <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center">
-                      <span className="text-blue-600 font-semibold text-xs">
-                        {AVAILABLE_USERS.find(u => u.id === selectedUser)?.name.charAt(0).toUpperCase()}
-                      </span>
+            {selectedUser && (() => {
+              const user = filteredUsers.find(u => u.id === selectedUser)
+              return user ? (
+                <div className="p-4 border rounded-lg bg-gray-50">
+                  <Label className="text-sm font-medium">Vista Previa:</Label>
+                  <div className="flex items-center justify-between mt-2">
+                    <div className="flex items-center space-x-3">
+                      <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center">
+                        <span className="text-blue-600 font-semibold text-xs">
+                          {(user.name || user.email).charAt(0).toUpperCase()}
+                        </span>
+                      </div>
+                      <div>
+                        <p className="font-medium text-sm">
+                          {user.name || user.email}
+                        </p>
+                        {user.name && (
+                          <p className="text-xs text-gray-500">
+                            {user.email}
+                          </p>
+                        )}
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-medium text-sm">
-                        {AVAILABLE_USERS.find(u => u.id === selectedUser)?.name}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {AVAILABLE_USERS.find(u => u.id === selectedUser)?.email}
-                      </p>
-                    </div>
+                    <Badge variant={selectedRole === 'ADMIN' ? 'default' : 'secondary'}>
+                      {selectedRole === 'ADMIN' ? 'Admin' : selectedRole === 'VIEWER' ? 'Invitado' : 'Miembro'}
+                    </Badge>
                   </div>
-                  <Badge variant={selectedRole === 'ADMIN' ? 'default' : 'secondary'}>
-                    {selectedRole === 'ADMIN' ? 'Admin' : 'Miembro'}
-                  </Badge>
                 </div>
-              </div>
-            )}
+              ) : null
+            })()}
           </div>
 
           <DialogFooter>
